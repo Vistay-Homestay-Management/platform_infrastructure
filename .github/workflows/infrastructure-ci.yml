@@ -14,7 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate Compose
-        run: docker compose --env-file .env.example --profile dependencies config --quiet
+        run: |
+          docker compose --env-file .env.example --profile dependencies config --quiet
+          docker compose -f compose.yaml -f compose.full.yaml --env-file .env.example --profile full config --quiet
       - uses: actions/setup-node@v4
         with:
           node-version: '24'

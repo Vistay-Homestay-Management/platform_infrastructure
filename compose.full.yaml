@@ -1,0 +1,162 @@
+services:
+  authentication:
+    build: ../service_authentication
+    profiles: ["full"]
+    environment:
+      DB_HOST: postgres
+      DB_NAME: vistay_authentication_db
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SSL
+    depends_on: [postgres, redis, kafka]
+    networks: [vistay]
+
+  user:
+    container_name: service-user
+    build: ../service_user
+    profiles: ["full"]
+    environment:
+      DB_HOST: postgres
+      DB_NAME: vistay_user_db
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SSL
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  property:
+    container_name: service-property
+    build: ../service_property
+    profiles: ["full"]
+    environment: &service-environment
+      DB_HOST: postgres
+      DB_NAME: vistay_property_db
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SSL
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  booking:
+    container_name: service-booking
+    build: ../service_booking
+    profiles: ["full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_booking_db
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  finance:
+    container_name: service-finance
+    build: ../service_finance
+    profiles: ["full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_finance_db
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  operations:
+    container_name: service-operations
+    build: ../service_operations
+    profiles: ["full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_operations_db
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  ota:
+    container_name: service-ota
+    build: ../service_ota
+    profiles: ["full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_ota_db
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  notification:
+    container_name: service-notification
+    build: ../service_notification
+    profiles: ["full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_notification_db
+      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  media:
+    container_name: service-media
+    build: ../service_media
+    profiles: ["full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_media_db
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    depends_on: [postgres, kafka, minio]
+    networks: [vistay]
+
+  warehouse:
+    container_name: service-data-warehouse
+    build: ../service_data_warehouse
+    profiles: ["full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_warehouse_db
+    depends_on: [postgres, kafka]
+    networks: [vistay]
+
+  router:
+    depends_on:
+      - user
+      - property
+      - booking
+      - finance
+      - operations
+      - ota
+      - notification
+      - media
+      - warehouse
+
+  gateway:
+    build: ../gateway_api
+    profiles: ["full"]
+    ports: ["8080:8080"]
+    environment:
+      APOLLO_ROUTER_URL: http://router:4000
+      AUTH_SERVICE_URL: http://authentication:8080
+      NOTIFICATION_SERVICE_URL: http://notification:8080
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
+    depends_on: [router, authentication, notification, redis]
+    networks: [vistay]
+
+  frontend-customer:
+    build: ../frontend_customer
+    profiles: ["full"]
+    ports: ["5173:8080"]
+    networks: [vistay]
+
+  frontend-host:
+    build: ../frontend_host
+    profiles: ["full"]
+    ports: ["5174:8080"]
+    networks: [vistay]
+
+  frontend-admin:
+    build: ../frontend_admin
+    profiles: ["full"]
+    ports: ["5175:8080"]
+    networks: [vistay]

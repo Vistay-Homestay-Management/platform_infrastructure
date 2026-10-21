@@ -4,6 +4,12 @@ Local development infrastructure, database bootstrap tooling, Apollo Federation 
 
 The repository is public and must never contain real endpoints, passwords, private keys, generated certificates, or database dumps.
 
+Run the complete local platform with both Compose files:
+
+```powershell
+docker compose -f compose.yaml -f compose.full.yaml --env-file .env --profile full up --build
+```
+
 ## Planned profiles
 
 - `dependencies`: PostgreSQL, Kafka, Redis, MinIO, and Apollo Router.
