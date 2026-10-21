@@ -26,3 +26,9 @@ $password = Read-Host 'PostgreSQL bootstrap password' -AsSecureString
 Generated credentials are encrypted for the current Windows user with DPAPI
 and written outside this repository to `.secrets/database-credentials.xml`.
 Never copy that file into source control.
+
+## Federation composition
+
+`scripts/Compose-Supergraph.ps1` composes the nine business subgraphs into
+the checked-in `supergraph.graphql` consumed by Apollo Router. Composition
+must pass whenever a subgraph schema changes.
