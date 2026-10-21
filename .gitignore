@@ -3,7 +3,6 @@
 !.env.example
 .secrets/
 certs/generated/
-supergraph.graphql
 build/
 *.log
 .idea/
