@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.secrets/
+certs/generated/
+supergraph.graphql
+build/
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
