@@ -1,0 +1,25 @@
+name: Infrastructure CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose
+        run: docker compose --env-file .env.example --profile dependencies config --quiet
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate committed supergraph
+        shell: pwsh
+        run: |
+          ./scripts/Compose-Supergraph.ps1
+          git diff --exit-code -- supergraph.graphql
