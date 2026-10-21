@@ -1,0 +1,131 @@
+name: vistay
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    profiles: ["dependencies", "full"]
+    environment:
+      POSTGRES_DB: vistay
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/local-init.sql:/docker-entrypoint-initdb.d/00-local-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [vistay]
+
+  redis:
+    image: redis:8.10.2-alpine
+    profiles: ["dependencies", "full"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    networks: [vistay]
+
+  kafka:
+    image: apache/kafka:4.3.1
+    profiles: ["dependencies", "full"]
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9091
+      KAFKA_LISTENERS: CONTROLLER://:9091,INTERNAL://:9092,SASL_SSL://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,SASL_SSL://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:SSL,SASL_SSL:SASL_SSL
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-512
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore.credentials
+      KAFKA_SSL_KEY_CREDENTIALS: key.credentials
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore.credentials
+      KAFKA_SSL_CLIENT_AUTH: requested
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "9093:9093"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - ./certs/generated/kafka:/etc/kafka/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 --command-config /etc/kafka/secrets/admin.properties >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [vistay]
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    profiles: ["dependencies", "full"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:?set KAFKA_ADMIN_PASSWORD}
+      KAFKA_SERVICE_PASSWORD: ${KAFKA_SERVICE_PASSWORD:?set KAFKA_SERVICE_PASSWORD}
+    volumes:
+      - ./certs/generated/kafka:/etc/kafka/secrets:ro
+      - ./kafka/init.sh:/opt/vistay/init.sh:ro
+    entrypoint: ["/bin/bash", "/opt/vistay/init.sh"]
+    networks: [vistay]
+
+  minio:
+    image: minio/minio:RELEASE.2025-06-13T11-33-47Z
+    profiles: ["dependencies", "full"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [vistay]
+
+  router:
+    image: ghcr.io/apollographql/router:v2.18.0
+    profiles: ["full"]
+    command: ["--config", "/dist/config/router.yaml", "--supergraph", "/dist/schema/supergraph.graphql"]
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./router/router.yaml:/dist/config/router.yaml:ro
+      - ./supergraph.graphql:/dist/schema/supergraph.graphql:ro
+    networks: [vistay]
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  minio-data:
+
+networks:
+  vistay:
+    name: vistay
