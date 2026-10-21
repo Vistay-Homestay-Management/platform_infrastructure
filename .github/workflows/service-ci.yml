@@ -55,14 +55,14 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: meta
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ inputs.image-name }}
+          images: ghcr.io/${{ github.repository_owner }}/${{ inputs['image-name'] }}
           tags: |
             type=sha
             type=raw,value=latest
       - uses: docker/build-push-action@v6
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
-          context: ${{ inputs.docker-context }}
+          context: ${{ inputs['docker-context'] }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

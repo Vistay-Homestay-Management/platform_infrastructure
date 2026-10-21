@@ -18,6 +18,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Checkout subgraph schemas
+        run: |
+          for repo in service_user service_property service_booking service_finance service_operations service_ota service_notification service_media service_data_warehouse; do
+            git clone --depth 1 "https://github.com/Vistay-Homestay-Management/${repo}.git" "../${repo}"
+          done
       - name: Validate committed supergraph
         shell: pwsh
         run: |
