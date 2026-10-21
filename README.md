@@ -33,6 +33,14 @@ Generated credentials are encrypted for the current Windows user with DPAPI
 and written outside this repository to `.secrets/database-credentials.xml`.
 Never copy that file into source control.
 
+After provisioning, publish only the runtime credentials to protected GitHub
+environments:
+
+```powershell
+./scripts/Publish-GitHubEnvironmentSecrets.ps1
+./scripts/Publish-GitHubSecuritySecrets.ps1
+```
+
 ## Federation composition
 
 `scripts/Compose-Supergraph.ps1` composes the nine business subgraphs into
