@@ -1,0 +1,45 @@
+initscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath "org.flywaydb:flyway-core:12.4.0"
+        classpath "org.flywaydb:flyway-database-postgresql:12.4.0"
+        classpath "org.postgresql:postgresql:42.7.8"
+    }
+}
+
+import org.flywaydb.core.Flyway
+
+gradle.projectsEvaluated {
+    rootProject.tasks.register("migrateRemoteDatabase") {
+        group = "database"
+        description = "Runs checked-in Flyway migrations using environment credentials."
+
+        doLast {
+            def required = ["DB_MIGRATION_URL", "DB_MIGRATION_USERNAME", "DB_MIGRATION_PASSWORD"]
+            def missing = required.findAll { !System.getenv(it) }
+            if (!missing.isEmpty()) {
+                throw new GradleException("Missing environment variables: " + missing.join(", "))
+            }
+
+            def result = Flyway.configure()
+                .dataSource(
+                    System.getenv("DB_MIGRATION_URL"),
+                    System.getenv("DB_MIGRATION_USERNAME"),
+                    System.getenv("DB_MIGRATION_PASSWORD")
+                )
+                .locations("filesystem:" + new File(rootProject.projectDir, "src/main/resources/db/migration").absolutePath)
+                .defaultSchema("app")
+                .schemas("app")
+                .createSchemas(true)
+                .cleanDisabled(true)
+                .validateOnMigrate(true)
+                .outOfOrder(false)
+                .load()
+                .migrate()
+
+            logger.lifecycle("Applied {} migration(s); schema version is {}.", result.migrationsExecuted, result.targetSchemaVersion)
+        }
+    }
+}
