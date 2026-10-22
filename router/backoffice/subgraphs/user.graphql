@@ -1,0 +1,26 @@
+# Vendored from platform_contracts commit
+# 513b686a9d7851d6f0f1207884f0e4d7d9218f89.
+extend schema
+  @link(
+    url: "https://specs.apollo.dev/federation/v2.7"
+    import: ["@authenticated"]
+  )
+
+type Query {
+  """The profile bound to the authenticated Backoffice access token."""
+  viewer: BackofficeViewer! @authenticated
+}
+
+type BackofficeViewer {
+  """The Keycloak `sub` UUID from the Backoffice realm."""
+  accountId: ID!
+
+  """The User service profile UUID; distinct from `accountId`."""
+  profileId: ID!
+
+  displayName: String!
+  email: String!
+  roles: [String!]!
+  permissions: [String!]!
+  authorizationVersion: Int!
+}

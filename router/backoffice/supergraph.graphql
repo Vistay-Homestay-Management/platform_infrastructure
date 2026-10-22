@@ -1,13 +1,20 @@
 schema
   @link(url: "https://specs.apollo.dev/link/v1.0")
-  @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
+  @link(url: "https://specs.apollo.dev/join/v0.4", for: EXECUTION)
+  @link(url: "https://specs.apollo.dev/authenticated/v0.1", for: SECURITY)
+  @link(url: "https://specs.apollo.dev/requiresScopes/v0.1", for: SECURITY)
 {
   query: Query
+  subscription: Subscription
 }
+
+directive @authenticated on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+directive @join__directive(graphs: [join__Graph!], name: String!, args: join__DirectiveArguments) repeatable on SCHEMA | OBJECT | INTERFACE | FIELD_DEFINITION
 
 directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
 
-directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean, overrideLabel: String) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
 directive @join__graph(name: String!, url: String!) on ENUM_VALUE
 
@@ -19,32 +26,41 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
-type BookingServiceInfo
-  @join__type(graph: BOOKING)
+directive @requiresScopes(scopes: [[requiresScopes__Scope!]!]!) on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+type BackofficeViewer
+  @join__type(graph: USER)
 {
-  name: String!
-  version: String!
+  """The Keycloak `sub` UUID from the Backoffice realm."""
+  accountId: ID!
+
+  """The User service profile UUID; distinct from `accountId`."""
+  profileId: ID!
+  displayName: String!
+  email: String!
+  roles: [String!]!
+  permissions: [String!]!
+  authorizationVersion: Int!
 }
 
-type FinanceServiceInfo
-  @join__type(graph: FINANCE)
-{
-  name: String!
-  version: String!
-}
+"""
+An opaque non-negative decimal sequence. Clients must persist and return it
+unchanged; its numeric representation is an implementation detail.
+"""
+scalar Cursor
+  @join__type(graph: NOTIFICATION)
+
+"""An RFC 3339 timestamp with an offset."""
+scalar DateTime
+  @join__type(graph: NOTIFICATION)
+
+scalar join__DirectiveArguments
 
 scalar join__FieldSet
 
 enum join__Graph {
-  BOOKING @join__graph(name: "booking", url: "http://service-booking:8080/graphql")
-  FINANCE @join__graph(name: "finance", url: "http://service-finance:8080/graphql")
-  MEDIA @join__graph(name: "media", url: "http://service-media:8080/graphql")
   NOTIFICATION @join__graph(name: "notification", url: "http://service-notification:8080/graphql")
-  OPERATIONS @join__graph(name: "operations", url: "http://service-operations:8080/graphql")
-  OTA @join__graph(name: "ota", url: "http://service-ota:8080/graphql")
-  PROPERTY @join__graph(name: "property", url: "http://service-property:8080/graphql")
   USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
-  WAREHOUSE @join__graph(name: "warehouse", url: "http://service-data-warehouse:8080/graphql")
 }
 
 scalar link__Import
@@ -61,73 +77,57 @@ enum link__Purpose {
   EXECUTION
 }
 
-type MediaServiceInfo
-  @join__type(graph: MEDIA)
-{
-  name: String!
-  version: String!
-}
-
-type NotificationServiceInfo
+type Notification
   @join__type(graph: NOTIFICATION)
 {
-  name: String!
-  version: String!
+  id: ID!
+  category: NotificationCategory!
+  title: String!
+  body: String!
+  channels: [NotificationChannel!]!
+  createdAt: DateTime!
+  readAt: DateTime
 }
 
-type OperationsServiceInfo
-  @join__type(graph: OPERATIONS)
+enum NotificationCategory
+  @join__type(graph: NOTIFICATION)
 {
-  name: String!
-  version: String!
+  WELCOME @join__enumValue(graph: NOTIFICATION)
+  SECURITY @join__enumValue(graph: NOTIFICATION)
 }
 
-type OtaServiceInfo
-  @join__type(graph: OTA)
+enum NotificationChannel
+  @join__type(graph: NOTIFICATION)
 {
-  name: String!
-  version: String!
+  IN_APP @join__enumValue(graph: NOTIFICATION)
+  EMAIL @join__enumValue(graph: NOTIFICATION)
+  PUSH @join__enumValue(graph: NOTIFICATION)
 }
 
-type PropertyServiceInfo
-  @join__type(graph: PROPERTY)
+type NotificationStreamEvent
+  @join__type(graph: NOTIFICATION)
 {
-  name: String!
-  version: String!
+  cursor: Cursor!
+  notification: Notification!
 }
 
 type Query
-  @join__type(graph: BOOKING)
-  @join__type(graph: FINANCE)
-  @join__type(graph: MEDIA)
   @join__type(graph: NOTIFICATION)
-  @join__type(graph: OPERATIONS)
-  @join__type(graph: OTA)
-  @join__type(graph: PROPERTY)
-  @join__type(graph: USER)
-  @join__type(graph: WAREHOUSE)
-{
-  bookingServiceInfo: BookingServiceInfo! @join__field(graph: BOOKING)
-  financeServiceInfo: FinanceServiceInfo! @join__field(graph: FINANCE)
-  mediaServiceInfo: MediaServiceInfo! @join__field(graph: MEDIA)
-  notificationServiceInfo: NotificationServiceInfo! @join__field(graph: NOTIFICATION)
-  operationsServiceInfo: OperationsServiceInfo! @join__field(graph: OPERATIONS)
-  otaServiceInfo: OtaServiceInfo! @join__field(graph: OTA)
-  propertyServiceInfo: PropertyServiceInfo! @join__field(graph: PROPERTY)
-  userServiceInfo: UserServiceInfo! @join__field(graph: USER)
-  warehouseServiceInfo: WarehouseServiceInfo! @join__field(graph: WAREHOUSE)
-}
-
-type UserServiceInfo
   @join__type(graph: USER)
 {
-  name: String!
-  version: String!
+  """The profile bound to the authenticated Backoffice access token."""
+  viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
 }
 
-type WarehouseServiceInfo
-  @join__type(graph: WAREHOUSE)
+scalar requiresScopes__Scope
+
+type Subscription
+  @join__type(graph: NOTIFICATION)
 {
-  name: String!
-  version: String!
+  """
+  Streams this viewer's durable inbox strictly after `afterCursor`. A null
+  cursor starts at the earliest retained entry. Delivery is at least once, so
+  clients deduplicate by `notification.id` and persist each received cursor.
+  """
+  notificationStream(afterCursor: Cursor): NotificationStreamEvent! @authenticated @requiresScopes(scopes: [["notifications:read"]])
 }
