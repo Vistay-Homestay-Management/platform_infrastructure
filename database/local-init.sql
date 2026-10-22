@@ -2,6 +2,7 @@
 
 SELECT format('CREATE DATABASE %I', database_name)
 FROM (VALUES
+  ('vistay_keycloak_db'),
   ('vistay_authentication_db'),
   ('vistay_user_db'),
   ('vistay_property_db'),

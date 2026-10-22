@@ -1,0 +1,97 @@
+{
+  "realm": "vistay-backoffice",
+  "displayName": "ViStay Backoffice",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": false,
+  "rememberMe": false,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "roles": {
+    "realm": [
+      { "name": "PLATFORM_ADMIN", "description": "Platform-wide administrative access" },
+      { "name": "PROPERTY_MANAGER", "description": "Property and contract operations" },
+      { "name": "FRONT_DESK", "description": "Reservation and stay operations" },
+      { "name": "FINANCE", "description": "Billing, reconciliation, and settlement" },
+      { "name": "OPERATIONS", "description": "Inspections, work orders, and readiness" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "vistay-backoffice-api",
+      "name": "ViStay Backoffice API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "vistay-backoffice-web",
+      "name": "ViStay Backoffice Web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://admin.localhost/*"],
+      "webOrigins": ["http://admin.localhost"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://admin.localhost/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "backoffice-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "vistay-backoffice-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "vistay-backoffice-mobile",
+      "name": "ViStay Backoffice Mobile",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["vistay-admin://oauth/callback"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "vistay-admin://logout"
+      },
+      "protocolMappers": [
+        {
+          "name": "backoffice-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "vistay-backoffice-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}
