@@ -9,6 +9,7 @@ http:
   shutdown_timeout: 45s
 
 jwt:
+  enabled: true
   require_authentication: true
   jwks_providers:
     - source: remote
@@ -73,8 +74,7 @@ csrf:
   required_headers:
     - X-CSRF-Token
 
-introspection:
-  enabled: false
+introspection: false
 
 laboratory:
   enabled: false
