@@ -6,17 +6,25 @@ x-kafka-image: &kafka-image apache/kafka:4.3.1
 services:
   postgres:
     image: *postgres-image
-    profiles: ["dependencies", "identity", "edge", "full"]
+    profiles: ["dependencies", "identity", "edge", "epic01", "full"]
     environment:
       POSTGRES_DB: vistay
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      AUTHENTICATION_DB_MIGRATOR_PASSWORD: ${AUTHENTICATION_DB_MIGRATOR_PASSWORD:?set AUTHENTICATION_DB_MIGRATOR_PASSWORD}
+      AUTHENTICATION_DB_APP_PASSWORD: ${AUTHENTICATION_DB_APP_PASSWORD:?set AUTHENTICATION_DB_APP_PASSWORD}
+      USER_DB_MIGRATOR_PASSWORD: ${USER_DB_MIGRATOR_PASSWORD:?set USER_DB_MIGRATOR_PASSWORD}
+      USER_DB_APP_PASSWORD: ${USER_DB_APP_PASSWORD:?set USER_DB_APP_PASSWORD}
+      NOTIFICATION_DB_MIGRATOR_PASSWORD: ${NOTIFICATION_DB_MIGRATOR_PASSWORD:?set NOTIFICATION_DB_MIGRATOR_PASSWORD}
+      NOTIFICATION_DB_APP_PASSWORD: ${NOTIFICATION_DB_APP_PASSWORD:?set NOTIFICATION_DB_APP_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     ports:
       - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
       - ./database/local-init.sql:/docker-entrypoint-initdb.d/00-local-init.sql:ro
+      - ./database/local-epic01-security.sh:/docker-entrypoint-initdb.d/01-local-epic01-security.sh:ro
+      - ./database/local-epic01-security.sql:/opt/vistay/local-epic01-security.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -26,7 +34,7 @@ services:
 
   redis:
     image: redis:8.10.2-alpine
-    profiles: ["dependencies", "full"]
+    profiles: ["dependencies", "epic01", "full"]
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
     ports:
       - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
@@ -43,36 +51,48 @@ services:
 
   kafka:
     image: *kafka-image
-    profiles: ["dependencies", "full"]
+    profiles: ["dependencies", "epic01", "full"]
     hostname: kafka
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9091
-      KAFKA_LISTENERS: CONTROLLER://:9091,INTERNAL://:9092,SASL_SSL://:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,SASL_SSL://localhost:${KAFKA_EXTERNAL_PORT:-9093}
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:SSL,SASL_SSL:SASL_SSL
+      KAFKA_LISTENERS: CONTROLLER://:9091,INTERNAL://:9092,CLIENT://:9094,EXTERNAL://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,CLIENT://kafka:9094,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9093}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:SSL,INTERNAL:SSL,CLIENT:SASL_SSL,EXTERNAL:SASL_SSL
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-512
-      KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
-      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore.credentials
-      KAFKA_SSL_KEY_CREDENTIALS: key.credentials
-      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka.truststore.jks
-      KAFKA_SSL_TRUSTSTORE_CREDENTIALS: truststore.credentials
+      KAFKA_LISTENER_NAME_CLIENT_SCRAM___SHA___512_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required;
+      KAFKA_LISTENER_NAME_EXTERNAL_SCRAM___SHA___512_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required;
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/broker/kafka.keystore.jks
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_STORE_PASSWORD:?set KAFKA_STORE_PASSWORD}
+      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_STORE_PASSWORD:?set KAFKA_STORE_PASSWORD}
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/broker/kafka.truststore.jks
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_STORE_PASSWORD:?set KAFKA_STORE_PASSWORD}
       KAFKA_SSL_CLIENT_AUTH: requested
+      KAFKA_LISTENER_NAME_CONTROLLER_SSL_CLIENT_AUTH: required
+      KAFKA_LISTENER_NAME_INTERNAL_SSL_CLIENT_AUTH: required
+      KAFKA_LISTENER_NAME_CLIENT_SSL_CLIENT_AUTH: none
+      KAFKA_LISTENER_NAME_EXTERNAL_SSL_CLIENT_AUTH: none
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_SUPER_USERS: "User:CN=kafka,OU=Platform,O=ViStay,L=Ho Chi Minh City,C=VN;User:CN=vistay-kafka-admin,OU=Platform,O=ViStay,L=Ho Chi Minh City,C=VN"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     ports:
       - "${KAFKA_BIND_ADDRESS:-127.0.0.1}:${KAFKA_EXTERNAL_PORT:-9093}:9093"
+    expose:
+      - "9094"
     volumes:
       - kafka-data:/var/lib/kafka/data
-      - ./certs/generated/kafka:/etc/kafka/secrets:ro
+      - ./certs/generated/kafka/broker:/etc/kafka/broker:ro
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 --command-config /etc/kafka/secrets/admin.properties >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 --command-config /etc/kafka/broker/broker.properties >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -80,15 +100,25 @@ services:
 
   kafka-init:
     image: *kafka-image
-    profiles: ["dependencies", "full"]
+    profiles: ["dependencies", "epic01", "full"]
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:?set KAFKA_ADMIN_PASSWORD}
-      KAFKA_SERVICE_PASSWORD: ${KAFKA_SERVICE_PASSWORD:?set KAFKA_SERVICE_PASSWORD}
+      KAFKA_AUTHENTICATION_PASSWORD: ${KAFKA_AUTHENTICATION_PASSWORD:?set KAFKA_AUTHENTICATION_PASSWORD}
+      KAFKA_USER_PASSWORD: ${KAFKA_USER_PASSWORD:?set KAFKA_USER_PASSWORD}
+      KAFKA_PROPERTY_PASSWORD: ${KAFKA_PROPERTY_PASSWORD:?set KAFKA_PROPERTY_PASSWORD}
+      KAFKA_BOOKING_PASSWORD: ${KAFKA_BOOKING_PASSWORD:?set KAFKA_BOOKING_PASSWORD}
+      KAFKA_FINANCE_PASSWORD: ${KAFKA_FINANCE_PASSWORD:?set KAFKA_FINANCE_PASSWORD}
+      KAFKA_OPERATIONS_PASSWORD: ${KAFKA_OPERATIONS_PASSWORD:?set KAFKA_OPERATIONS_PASSWORD}
+      KAFKA_OTA_PASSWORD: ${KAFKA_OTA_PASSWORD:?set KAFKA_OTA_PASSWORD}
+      KAFKA_NOTIFICATION_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD:?set KAFKA_NOTIFICATION_PASSWORD}
+      KAFKA_MEDIA_PASSWORD: ${KAFKA_MEDIA_PASSWORD:?set KAFKA_MEDIA_PASSWORD}
+      KAFKA_WAREHOUSE_PASSWORD: ${KAFKA_WAREHOUSE_PASSWORD:?set KAFKA_WAREHOUSE_PASSWORD}
+      KAFKA_STORE_PASSWORD: ${KAFKA_STORE_PASSWORD:?set KAFKA_STORE_PASSWORD}
     volumes:
-      - ./certs/generated/kafka:/etc/kafka/secrets:ro
+      - ./certs/generated/kafka/admin:/etc/kafka/admin:ro
       - ./kafka/init.sh:/opt/vistay/init.sh:ro
     entrypoint: ["/bin/bash", "/opt/vistay/init.sh"]
     networks: [vistay]
@@ -114,11 +144,12 @@ services:
 
   keycloak:
     image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244}
-    profiles: ["identity", "edge", "full"]
+    profiles: ["identity", "edge", "epic01", "full"]
     command: ["start", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:?set KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?set KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?set KEYCLOAK_ADMIN_CLIENT_SECRET}
       KC_DB: postgres
       KC_DB_URL: ${KEYCLOAK_DB_URL:-jdbc:postgresql://postgres:5432/vistay_keycloak_db}
       KC_DB_USERNAME: ${KEYCLOAK_DB_USERNAME:?set KEYCLOAK_DB_USERNAME}
@@ -149,7 +180,7 @@ services:
 
   router-backoffice:
     image: ${HIVE_ROUTER_IMAGE:-ghcr.io/graphql-hive/router:0.3.5@sha256:feaf52e70615f8516d86c4c07f6f29046d88e1b38f9cf6aa099d17b2b51f4827}
-    profiles: ["edge", "full"]
+    profiles: ["edge", "epic01", "full"]
     environment:
       ROUTER_CONFIG_FILE_PATH: /app/config/router.config.yaml
       BACKOFFICE_JWKS_URL: ${BACKOFFICE_JWKS_URL:-http://keycloak:8080/realms/vistay-backoffice/protocol/openid-connect/certs}
@@ -178,11 +209,12 @@ services:
 
   caddy:
     image: ${CADDY_IMAGE:-caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d}
-    profiles: ["edge", "full"]
+    profiles: ["edge", "epic01", "full"]
     environment:
       BACKOFFICE_GRAPHQL_SITE_ADDRESS: ${BACKOFFICE_GRAPHQL_SITE_ADDRESS:-http://graphql.localhost}
       KEYCLOAK_SITE_ADDRESS: ${KEYCLOAK_SITE_ADDRESS:-http://identity.localhost}
       BACKOFFICE_WEB_SITE_ADDRESS: ${BACKOFFICE_WEB_SITE_ADDRESS:-http://admin.localhost}
+      BACKOFFICE_AUTH_SITE_ADDRESS: ${BACKOFFICE_AUTH_SITE_ADDRESS:-http://auth.localhost}
       OBJECT_STORAGE_SITE_ADDRESS: ${OBJECT_STORAGE_SITE_ADDRESS:-http://objects.localhost}
       CHANNEL_MANAGER_WEBHOOK_SITE_ADDRESS: ${CHANNEL_MANAGER_WEBHOOK_SITE_ADDRESS:-http://channels.localhost}
     ports:
