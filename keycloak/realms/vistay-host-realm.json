@@ -1,7 +1,7 @@
 {
   "realm": "vistay-host",
   "displayName": "ViStay Host",
-  "enabled": true,
+  "enabled": false,
   "sslRequired": "external",
   "registrationAllowed": false,
   "verifyEmail": true,

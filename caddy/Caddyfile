@@ -47,13 +47,38 @@ http://127.0.0.1:8080 {
 {$KEYCLOAK_SITE_ADDRESS:http://identity.localhost} {
 	import access_log
 	import security_headers
-	reverse_proxy keycloak:8080
+
+	route {
+		# Only the Backoffice realm and login theme assets are public in Epic 01.
+		# Other realms and Keycloak's administrative surface stay internal.
+		@identity_public path /realms/vistay-backoffice/* /resources/*
+		reverse_proxy @identity_public keycloak:8080
+
+		respond 404
+	}
 }
 
 {$BACKOFFICE_WEB_SITE_ADDRESS:http://admin.localhost} {
 	import access_log
 	import security_headers
 	reverse_proxy frontend-admin:8080
+}
+
+# The bootstrap endpoint is intentionally isolated from the GraphQL surface
+# and also enforces its own one-time bootstrap credential and idempotency key.
+{$BACKOFFICE_AUTH_SITE_ADDRESS:http://auth.localhost} {
+	import access_log
+	import security_headers
+
+	route {
+		@ready path /_edge/ready
+		rewrite @ready /actuator/health/readiness
+
+		@authentication path /api/v1/backoffice/accounts/bootstrap /actuator/health/readiness
+		reverse_proxy @authentication authentication:8080
+
+		respond 404
+	}
 }
 
 # Presigned object requests retain the exact path and query string; MinIO

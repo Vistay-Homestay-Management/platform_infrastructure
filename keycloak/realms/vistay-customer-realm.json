@@ -1,9 +1,9 @@
 {
   "realm": "vistay-customer",
   "displayName": "ViStay Customer",
-  "enabled": true,
+  "enabled": false,
   "sslRequired": "external",
-  "registrationAllowed": true,
+  "registrationAllowed": false,
   "registrationEmailAsUsername": true,
   "verifyEmail": true,
   "loginWithEmailAllowed": true,
