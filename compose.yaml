@@ -1,16 +1,19 @@
 name: vistay
 
+x-postgres-image: &postgres-image postgres:18.6-alpine
+x-kafka-image: &kafka-image apache/kafka:4.3.1
+
 services:
   postgres:
-    image: postgres:18.6-alpine
-    profiles: ["dependencies", "full"]
+    image: *postgres-image
+    profiles: ["dependencies", "identity", "edge", "full"]
     environment:
       POSTGRES_DB: vistay
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     ports:
-      - "5432:5432"
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./database/local-init.sql:/docker-entrypoint-initdb.d/00-local-init.sql:ro
@@ -26,7 +29,7 @@ services:
     profiles: ["dependencies", "full"]
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
     ports:
-      - "6379:6379"
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -39,7 +42,7 @@ services:
     networks: [vistay]
 
   kafka:
-    image: apache/kafka:4.3.1
+    image: *kafka-image
     profiles: ["dependencies", "full"]
     hostname: kafka
     environment:
@@ -48,7 +51,7 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9091
       KAFKA_LISTENERS: CONTROLLER://:9091,INTERNAL://:9092,SASL_SSL://:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,SASL_SSL://localhost:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,SASL_SSL://localhost:${KAFKA_EXTERNAL_PORT:-9093}
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:SSL,SASL_SSL:SASL_SSL
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-512
@@ -64,7 +67,7 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     ports:
-      - "9093:9093"
+      - "${KAFKA_BIND_ADDRESS:-127.0.0.1}:${KAFKA_EXTERNAL_PORT:-9093}:9093"
     volumes:
       - kafka-data:/var/lib/kafka/data
       - ./certs/generated/kafka:/etc/kafka/secrets:ro
@@ -76,7 +79,7 @@ services:
     networks: [vistay]
 
   kafka-init:
-    image: apache/kafka:4.3.1
+    image: *kafka-image
     profiles: ["dependencies", "full"]
     depends_on:
       kafka:
@@ -98,8 +101,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -109,15 +112,105 @@ services:
       retries: 20
     networks: [vistay]
 
-  router:
-    image: ghcr.io/apollographql/router:v2.18.0
-    profiles: ["full"]
-    command: ["--config", "/dist/config/router.yaml", "--supergraph", "/dist/schema/supergraph.graphql"]
-    ports:
-      - "4000:4000"
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244}
+    profiles: ["identity", "edge", "full"]
+    command: ["start", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:?set KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?set KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: ${KEYCLOAK_DB_URL:-jdbc:postgresql://postgres:5432/vistay_keycloak_db}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USERNAME:?set KEYCLOAK_DB_USERNAME}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://identity.localhost}
+      KC_HOSTNAME_STRICT: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_CACHE: local
+    expose:
+      - "8080"
+      - "9000"
     volumes:
-      - ./router/router.yaml:/dist/config/router.yaml:ro
-      - ./supergraph.graphql:/dist/schema/supergraph.graphql:ro
+      - ./keycloak/realms:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-ec", "{ printf 'HEAD /health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep -q 'HTTP/1.0 200'; } 0<>/dev/tcp/127.0.0.1/9000"]
+      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks: [vistay]
+
+  router-backoffice:
+    image: ${HIVE_ROUTER_IMAGE:-ghcr.io/graphql-hive/router:0.3.5@sha256:feaf52e70615f8516d86c4c07f6f29046d88e1b38f9cf6aa099d17b2b51f4827}
+    profiles: ["edge", "full"]
+    environment:
+      ROUTER_CONFIG_FILE_PATH: /app/config/router.config.yaml
+      BACKOFFICE_JWKS_URL: ${BACKOFFICE_JWKS_URL:-http://keycloak:8080/realms/vistay-backoffice/protocol/openid-connect/certs}
+      BACKOFFICE_JWT_AUDIENCES: ${BACKOFFICE_JWT_AUDIENCES:-vistay-backoffice-api}
+      BACKOFFICE_JWT_ISSUERS: ${BACKOFFICE_JWT_ISSUERS:-http://identity.localhost/realms/vistay-backoffice}
+      BACKOFFICE_CORS_ALLOWED_ORIGINS: ${BACKOFFICE_CORS_ALLOWED_ORIGINS:-http://admin.localhost}
+      LOG_LEVEL: ${HIVE_ROUTER_LOG_LEVEL:-info}
+      LOG_FORMAT: json
+    expose:
+      - "4000"
+    volumes:
+      - ./router/backoffice/router.config.yaml:/app/config/router.config.yaml:ro
+      - ./router/backoffice/supergraph.graphql:/app/schema/supergraph.graphql:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 50s
+    restart: unless-stopped
+    networks: [vistay]
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d}
+    profiles: ["edge", "full"]
+    environment:
+      BACKOFFICE_GRAPHQL_SITE_ADDRESS: ${BACKOFFICE_GRAPHQL_SITE_ADDRESS:-http://graphql.localhost}
+      KEYCLOAK_SITE_ADDRESS: ${KEYCLOAK_SITE_ADDRESS:-http://identity.localhost}
+      BACKOFFICE_WEB_SITE_ADDRESS: ${BACKOFFICE_WEB_SITE_ADDRESS:-http://admin.localhost}
+      OBJECT_STORAGE_SITE_ADDRESS: ${OBJECT_STORAGE_SITE_ADDRESS:-http://objects.localhost}
+      CHANNEL_MANAGER_WEBHOOK_SITE_ADDRESS: ${CHANNEL_MANAGER_WEBHOOK_SITE_ADDRESS:-http://channels.localhost}
+    ports:
+      - "${EDGE_BIND_ADDRESS:-0.0.0.0}:${EDGE_HTTP_PORT:-80}:80"
+      - "${EDGE_BIND_ADDRESS:-0.0.0.0}:${EDGE_HTTPS_PORT:-443}:443"
+      - "${EDGE_BIND_ADDRESS:-0.0.0.0}:${EDGE_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      router-backoffice:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
     networks: [vistay]
 
 volumes:
@@ -125,6 +218,8 @@ volumes:
   redis-data:
   kafka-data:
   minio-data:
+  caddy-data:
+  caddy-config:
 
 networks:
   vistay:

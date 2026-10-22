@@ -9,10 +9,21 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
+      OIDC_ISSUER_URI: ${BACKOFFICE_JWT_ISSUERS}
+      OIDC_JWK_SET_URI: ${BACKOFFICE_JWKS_URL}
+      OIDC_AUDIENCE: ${BACKOFFICE_JWT_AUDIENCES}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_SECURITY_PROTOCOL: SSL
-    depends_on: [postgres, redis, kafka]
+    expose: ["8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     networks: [vistay]
 
   user:
@@ -24,9 +35,19 @@ services:
       DB_NAME: vistay_user_db
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      OIDC_ISSUER_URI: ${BACKOFFICE_JWT_ISSUERS}
+      OIDC_JWK_SET_URI: ${BACKOFFICE_JWKS_URL}
+      OIDC_AUDIENCE: ${BACKOFFICE_JWT_AUDIENCES}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_SECURITY_PROTOCOL: SSL
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     networks: [vistay]
 
   property:
@@ -38,9 +59,19 @@ services:
       DB_NAME: vistay_property_db
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      OIDC_ISSUER_URI: ${BACKOFFICE_JWT_ISSUERS}
+      OIDC_JWK_SET_URI: ${BACKOFFICE_JWKS_URL}
+      OIDC_AUDIENCE: ${BACKOFFICE_JWT_AUDIENCES}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_SECURITY_PROTOCOL: SSL
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on: &service-dependencies
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
     networks: [vistay]
 
   booking:
@@ -50,7 +81,8 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_booking_db
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on: *service-dependencies
     networks: [vistay]
 
   finance:
@@ -60,7 +92,8 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_finance_db
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on: *service-dependencies
     networks: [vistay]
 
   operations:
@@ -70,7 +103,8 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_operations_db
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on: *service-dependencies
     networks: [vistay]
 
   ota:
@@ -80,7 +114,8 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_ota_db
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on: *service-dependencies
     networks: [vistay]
 
   notification:
@@ -90,8 +125,8 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_notification_db
-      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on: *service-dependencies
     networks: [vistay]
 
   media:
@@ -104,7 +139,11 @@ services:
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${MINIO_ROOT_USER}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-    depends_on: [postgres, kafka, minio]
+    expose: ["8080"]
+    depends_on:
+      <<: *service-dependencies
+      minio:
+        condition: service_healthy
     networks: [vistay]
 
   warehouse:
@@ -114,49 +153,54 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_warehouse_db
-    depends_on: [postgres, kafka]
+    expose: ["8080"]
+    depends_on: *service-dependencies
     networks: [vistay]
 
-  router:
+  router-backoffice:
     depends_on:
-      - user
-      - property
-      - booking
-      - finance
-      - operations
-      - ota
-      - notification
-      - media
-      - warehouse
+      user:
+        condition: service_started
+      property:
+        condition: service_started
+      booking:
+        condition: service_started
+      finance:
+        condition: service_started
+      operations:
+        condition: service_started
+      ota:
+        condition: service_started
+      notification:
+        condition: service_started
+      media:
+        condition: service_started
+      warehouse:
+        condition: service_started
 
-  gateway:
-    build: ../gateway_api
-    profiles: ["full"]
-    ports: ["8080:8080"]
-    environment:
-      APOLLO_ROUTER_URL: http://router:4000
-      AUTH_SERVICE_URL: http://authentication:8080
-      NOTIFICATION_SERVICE_URL: http://notification:8080
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
-    depends_on: [router, authentication, notification, redis]
-    networks: [vistay]
+  caddy:
+    depends_on:
+      frontend-admin:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      ota:
+        condition: service_started
 
   frontend-customer:
     build: ../frontend_customer
     profiles: ["full"]
-    ports: ["5173:8080"]
+    expose: ["8080"]
     networks: [vistay]
 
   frontend-host:
     build: ../frontend_host
     profiles: ["full"]
-    ports: ["5174:8080"]
+    expose: ["8080"]
     networks: [vistay]
 
   frontend-admin:
     build: ../frontend_admin
     profiles: ["full"]
-    ports: ["5175:8080"]
+    expose: ["8080"]
     networks: [vistay]
