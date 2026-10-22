@@ -1,0 +1,110 @@
+supergraph:
+  source: file
+  path: /app/schema/supergraph.graphql
+
+http:
+  host: 0.0.0.0
+  port: 4000
+  graphql_endpoint: /graphql
+  shutdown_timeout: 45s
+
+jwt:
+  require_authentication: true
+  jwks_providers:
+    - source: remote
+      url:
+        from_env: BACKOFFICE_JWKS_URL
+        default: http://keycloak:8080/realms/vistay-backoffice/protocol/openid-connect/certs
+      polling_interval: 15m
+      prefetch: false
+      refresh_on_unknown_kid: 30s
+  audiences:
+    from_env: BACKOFFICE_JWT_AUDIENCES
+    default:
+      - vistay-backoffice-api
+  issuers:
+    from_env: BACKOFFICE_JWT_ISSUERS
+    default:
+      - http://identity.localhost/realms/vistay-backoffice
+  allowed_algorithms:
+    - RS256
+
+headers:
+  all:
+    request:
+      - propagate:
+          named: Authorization
+      - propagate:
+          named: Traceparent
+      - propagate:
+          named: Tracestate
+      - propagate:
+          named: X-Request-ID
+      - propagate:
+          named: X-Idempotency-Key
+      - propagate:
+          named: If-Match
+
+cors:
+  enabled: true
+  allow_credentials: false
+  methods:
+    - GET
+    - POST
+    - OPTIONS
+  allow_headers:
+    - Authorization
+    - Content-Type
+    - X-CSRF-Token
+    - X-Request-ID
+    - X-Idempotency-Key
+    - If-Match
+  expose_headers:
+    - X-Request-ID
+  max_age: 600
+  policies:
+    - origins:
+        from_env: BACKOFFICE_CORS_ALLOWED_ORIGINS
+        default:
+          - http://admin.localhost
+
+csrf:
+  enabled: true
+  required_headers:
+    - X-CSRF-Token
+
+introspection:
+  enabled: false
+
+laboratory:
+  enabled: false
+
+subscriptions:
+  enabled: true
+
+limits:
+  max_depth:
+    n: 20
+    flatten_fragments: true
+  max_directives:
+    n: 30
+  max_tokens:
+    n: 2000
+  max_aliases:
+    n: 30
+  max_request_body_size: 1MB
+  max_request_header_size: 16KiB
+
+traffic_shaping:
+  max_connections_per_host: 100
+  router:
+    max_long_lived_clients: 256
+    request_timeout: 30s
+    keep_alive: 60s
+
+error_masking:
+  enabled: true
+
+log:
+  level: info
+  format: json
