@@ -1,0 +1,10 @@
+federation_version: =2.11.3
+subgraphs:
+  user:
+    routing_url: http://service-user:8080/graphql
+    schema:
+      file: subgraphs/user.graphql
+  notification:
+    routing_url: http://service-notification:8080/graphql
+    schema:
+      file: subgraphs/notification.graphql

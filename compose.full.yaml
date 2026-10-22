@@ -1,46 +1,118 @@
+x-service-environment: &service-environment
+  DB_HOST: postgres
+  KEYCLOAK_BACKOFFICE_ISSUER: ${BACKOFFICE_JWT_ISSUERS}
+  KEYCLOAK_BACKOFFICE_JWKS_URI: ${BACKOFFICE_JWKS_URL}
+  KEYCLOAK_BACKOFFICE_AUDIENCE: ${BACKOFFICE_JWT_AUDIENCES}
+  # Compatibility for bounded contexts that have not yet adopted the explicit
+  # public-issuer/internal-JWKS variable names.
+  OIDC_ISSUER_URI: ${BACKOFFICE_JWT_ISSUERS}
+  OIDC_JWK_SET_URI: ${BACKOFFICE_JWKS_URL}
+  OIDC_AUDIENCE: ${BACKOFFICE_JWT_AUDIENCES}
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9094
+  KAFKA_SECURITY_PROTOCOL: SASL_SSL
+  KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+  KAFKA_TRUSTSTORE_LOCATION: /run/secrets/kafka/kafka.truststore.jks
+  KAFKA_TRUSTSTORE_PASSWORD: ${KAFKA_STORE_PASSWORD}
+
+x-service-dependencies: &service-dependencies
+  postgres:
+    condition: service_healthy
+  kafka:
+    condition: service_healthy
+  kafka-init:
+    condition: service_completed_successfully
+  keycloak:
+    condition: service_healthy
+
 services:
   authentication:
+    container_name: service-authentication
     build: ../service_authentication
-    profiles: ["full"]
+    profiles: ["epic01", "full"]
     environment:
-      DB_HOST: postgres
+      <<: *service-environment
       DB_NAME: vistay_authentication_db
-      DB_USERNAME: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_USERNAME: vistay_authentication_app
+      DB_PASSWORD: ${AUTHENTICATION_DB_APP_PASSWORD}
+      SPRING_FLYWAY_USER: vistay_authentication_migrator
+      SPRING_FLYWAY_PASSWORD: ${AUTHENTICATION_DB_MIGRATOR_PASSWORD}
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_SECURITY_PROTOCOL: SSL
-    depends_on: [postgres, redis, kafka]
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-authentication" password="${KAFKA_AUTHENTICATION_PASSWORD}";
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_BACKOFFICE_REALM: vistay-backoffice
+      KEYCLOAK_ADMIN_CLIENT_ID: vistay-auth-facade
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+      VISTAY_BOOTSTRAP_TOKEN: ${VISTAY_BOOTSTRAP_TOKEN}
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+      - ./certs/generated/grpc/authentication-client:/run/secrets/grpc:ro
+    depends_on:
+      <<: *service-dependencies
+      redis:
+        condition: service_healthy
     networks: [vistay]
 
   user:
     container_name: service-user
     build: ../service_user
-    profiles: ["full"]
+    profiles: ["epic01", "full"]
     environment:
-      DB_HOST: postgres
+      <<: *service-environment
       DB_NAME: vistay_user_db
-      DB_USERNAME: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_SECURITY_PROTOCOL: SSL
-    depends_on: [postgres, kafka]
+      DB_USERNAME: vistay_user_app
+      DB_PASSWORD: ${USER_DB_APP_PASSWORD}
+      SPRING_FLYWAY_USER: vistay_user_migrator
+      SPRING_FLYWAY_PASSWORD: ${USER_DB_MIGRATOR_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-user" password="${KAFKA_USER_PASSWORD}";
+      GRPC_SERVER_PORT: 9090
+      GRPC_TLS_ENABLED: "true"
+      GRPC_SSL_BUNDLE: grpc-server
+      GRPC_SERVER_CERT: file:/run/secrets/grpc/server.crt
+      GRPC_SERVER_KEY: file:/run/secrets/grpc/server.key
+      GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/ca.crt
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/authentication
+      GRPC_MAXIMUM_DEADLINE: 2s
+    expose: ["8080", "9090"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+      - ./certs/generated/grpc/user-server:/run/secrets/grpc:ro
+    depends_on: *service-dependencies
+    networks: [vistay]
+
+  notification:
+    container_name: service-notification
+    build: ../service_notification
+    profiles: ["epic01", "full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_notification_db
+      DB_USERNAME: vistay_notification_app
+      DB_PASSWORD: ${NOTIFICATION_DB_APP_PASSWORD}
+      SPRING_FLYWAY_USER: vistay_notification_migrator
+      SPRING_FLYWAY_PASSWORD: ${NOTIFICATION_DB_MIGRATOR_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-notification" password="${KAFKA_NOTIFICATION_PASSWORD}";
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on: *service-dependencies
     networks: [vistay]
 
   property:
     container_name: service-property
     build: ../service_property
     profiles: ["full"]
-    environment: &service-environment
-      DB_HOST: postgres
+    environment:
+      <<: *service-environment
       DB_NAME: vistay_property_db
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_SECURITY_PROTOCOL: SSL
-    depends_on: [postgres, kafka]
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-property" password="${KAFKA_PROPERTY_PASSWORD}";
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on: *service-dependencies
     networks: [vistay]
 
   booking:
@@ -50,7 +122,13 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_booking_db
-    depends_on: [postgres, kafka]
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-booking" password="${KAFKA_BOOKING_PASSWORD}";
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on: *service-dependencies
     networks: [vistay]
 
   finance:
@@ -60,7 +138,13 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_finance_db
-    depends_on: [postgres, kafka]
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-finance" password="${KAFKA_FINANCE_PASSWORD}";
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on: *service-dependencies
     networks: [vistay]
 
   operations:
@@ -70,7 +154,13 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_operations_db
-    depends_on: [postgres, kafka]
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-operations" password="${KAFKA_OPERATIONS_PASSWORD}";
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on: *service-dependencies
     networks: [vistay]
 
   ota:
@@ -80,18 +170,13 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_ota_db
-    depends_on: [postgres, kafka]
-    networks: [vistay]
-
-  notification:
-    container_name: service-notification
-    build: ../service_notification
-    profiles: ["full"]
-    environment:
-      <<: *service-environment
-      DB_NAME: vistay_notification_db
-      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
-    depends_on: [postgres, kafka]
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-ota" password="${KAFKA_OTA_PASSWORD}";
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on: *service-dependencies
     networks: [vistay]
 
   media:
@@ -101,10 +186,19 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_media_db
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-media" password="${KAFKA_MEDIA_PASSWORD}";
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${MINIO_ROOT_USER}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-    depends_on: [postgres, kafka, minio]
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on:
+      <<: *service-dependencies
+      minio:
+        condition: service_healthy
     networks: [vistay]
 
   warehouse:
@@ -114,49 +208,29 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_warehouse_db
-    depends_on: [postgres, kafka]
-    networks: [vistay]
-
-  router:
-    depends_on:
-      - user
-      - property
-      - booking
-      - finance
-      - operations
-      - ota
-      - notification
-      - media
-      - warehouse
-
-  gateway:
-    build: ../gateway_api
-    profiles: ["full"]
-    ports: ["8080:8080"]
-    environment:
-      APOLLO_ROUTER_URL: http://router:4000
-      AUTH_SERVICE_URL: http://authentication:8080
-      NOTIFICATION_SERVICE_URL: http://notification:8080
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      VISTAY_JWT_SECRET: ${VISTAY_JWT_SECRET}
-    depends_on: [router, authentication, notification, redis]
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-warehouse" password="${KAFKA_WAREHOUSE_PASSWORD}";
+    expose: ["8080"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on: *service-dependencies
     networks: [vistay]
 
   frontend-customer:
     build: ../frontend_customer
     profiles: ["full"]
-    ports: ["5173:8080"]
+    expose: ["8080"]
     networks: [vistay]
 
   frontend-host:
     build: ../frontend_host
     profiles: ["full"]
-    ports: ["5174:8080"]
+    expose: ["8080"]
     networks: [vistay]
 
   frontend-admin:
     build: ../frontend_admin
-    profiles: ["full"]
-    ports: ["5175:8080"]
+    profiles: ["epic01", "full"]
+    expose: ["8080"]
     networks: [vistay]
