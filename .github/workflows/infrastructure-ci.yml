@@ -67,6 +67,13 @@ jobs:
             --env CHANNEL_MANAGER_WEBHOOK_HOST=channels.localhost \
             --env PAYMENT_WEBHOOK_HOST=payments.localhost \
             --env 'NGINX_ENVSUBST_FILTER=^(BACKOFFICE_GRAPHQL_HOST|KEYCLOAK_HOST|BACKOFFICE_WEB_HOST|BACKOFFICE_AUTH_HOST|OBJECT_STORAGE_HOST|CHANNEL_MANAGER_WEBHOOK_HOST|PAYMENT_WEBHOOK_HOST)$' \
+            --add-host router-backoffice:127.0.0.1 \
+            --add-host keycloak:127.0.0.1 \
+            --add-host frontend-admin:127.0.0.1 \
+            --add-host authentication:127.0.0.1 \
+            --add-host minio:127.0.0.1 \
+            --add-host ota:127.0.0.1 \
+            --add-host payment:127.0.0.1 \
             --volume "$PWD/nginx/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
             --volume "$PWD/nginx/proxy_params:/etc/nginx/proxy_params:ro" \
             "$NGINX_IMAGE" nginx -t
