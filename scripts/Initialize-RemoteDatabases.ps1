@@ -33,6 +33,7 @@ $services = @(
     @{ Name = 'property'; Repo = 'service_property'; Database = 'vistay_property_db' },
     @{ Name = 'booking'; Repo = 'service_booking'; Database = 'vistay_booking_db' },
     @{ Name = 'finance'; Repo = 'service_finance'; Database = 'vistay_finance_db' },
+    @{ Name = 'payment'; Repo = 'service_payment'; Database = 'vistay_payment_db' },
     @{ Name = 'operations'; Repo = 'service_operations'; Database = 'vistay_operations_db' },
     @{ Name = 'ota'; Repo = 'service_ota'; Database = 'vistay_ota_db' },
     @{ Name = 'notification'; Repo = 'service_notification'; Database = 'vistay_notification_db' },
