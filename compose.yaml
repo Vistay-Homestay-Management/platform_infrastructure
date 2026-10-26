@@ -17,6 +17,10 @@ services:
       USER_DB_APP_PASSWORD: ${USER_DB_APP_PASSWORD:?set USER_DB_APP_PASSWORD}
       NOTIFICATION_DB_MIGRATOR_PASSWORD: ${NOTIFICATION_DB_MIGRATOR_PASSWORD:?set NOTIFICATION_DB_MIGRATOR_PASSWORD}
       NOTIFICATION_DB_APP_PASSWORD: ${NOTIFICATION_DB_APP_PASSWORD:?set NOTIFICATION_DB_APP_PASSWORD}
+      FINANCE_DB_MIGRATOR_PASSWORD: ${FINANCE_DB_MIGRATOR_PASSWORD:?set FINANCE_DB_MIGRATOR_PASSWORD}
+      FINANCE_DB_APP_PASSWORD: ${FINANCE_DB_APP_PASSWORD:?set FINANCE_DB_APP_PASSWORD}
+      PAYMENT_DB_MIGRATOR_PASSWORD: ${PAYMENT_DB_MIGRATOR_PASSWORD:?set PAYMENT_DB_MIGRATOR_PASSWORD}
+      PAYMENT_DB_APP_PASSWORD: ${PAYMENT_DB_APP_PASSWORD:?set PAYMENT_DB_APP_PASSWORD}
       TZ: Asia/Ho_Chi_Minh
     ports:
       - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
@@ -111,6 +115,7 @@ services:
       KAFKA_PROPERTY_PASSWORD: ${KAFKA_PROPERTY_PASSWORD:?set KAFKA_PROPERTY_PASSWORD}
       KAFKA_BOOKING_PASSWORD: ${KAFKA_BOOKING_PASSWORD:?set KAFKA_BOOKING_PASSWORD}
       KAFKA_FINANCE_PASSWORD: ${KAFKA_FINANCE_PASSWORD:?set KAFKA_FINANCE_PASSWORD}
+      KAFKA_PAYMENT_PASSWORD: ${KAFKA_PAYMENT_PASSWORD:?set KAFKA_PAYMENT_PASSWORD}
       KAFKA_OPERATIONS_PASSWORD: ${KAFKA_OPERATIONS_PASSWORD:?set KAFKA_OPERATIONS_PASSWORD}
       KAFKA_OTA_PASSWORD: ${KAFKA_OTA_PASSWORD:?set KAFKA_OTA_PASSWORD}
       KAFKA_NOTIFICATION_PASSWORD: ${KAFKA_NOTIFICATION_PASSWORD:?set KAFKA_NOTIFICATION_PASSWORD}
@@ -207,24 +212,21 @@ services:
     restart: unless-stopped
     networks: [vistay]
 
-  caddy:
-    image: ${CADDY_IMAGE:-caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d}
+  nginx:
+    image: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.28.0-alpine@sha256:c97ff0bf7cbae369953c6da1232ec14ad9f971d66360c5698db0856a4cd657a0}
     profiles: ["edge", "epic01", "full"]
     environment:
-      BACKOFFICE_GRAPHQL_SITE_ADDRESS: ${BACKOFFICE_GRAPHQL_SITE_ADDRESS:-http://graphql.localhost}
-      KEYCLOAK_SITE_ADDRESS: ${KEYCLOAK_SITE_ADDRESS:-http://identity.localhost}
-      BACKOFFICE_WEB_SITE_ADDRESS: ${BACKOFFICE_WEB_SITE_ADDRESS:-http://admin.localhost}
-      BACKOFFICE_AUTH_SITE_ADDRESS: ${BACKOFFICE_AUTH_SITE_ADDRESS:-http://auth.localhost}
-      OBJECT_STORAGE_SITE_ADDRESS: ${OBJECT_STORAGE_SITE_ADDRESS:-http://objects.localhost}
-      CHANNEL_MANAGER_WEBHOOK_SITE_ADDRESS: ${CHANNEL_MANAGER_WEBHOOK_SITE_ADDRESS:-http://channels.localhost}
+      BACKOFFICE_GRAPHQL_HOST: ${BACKOFFICE_GRAPHQL_HOST:-graphql.localhost}
+      KEYCLOAK_HOST: ${KEYCLOAK_HOST:-identity.localhost}
+      BACKOFFICE_WEB_HOST: ${BACKOFFICE_WEB_HOST:-admin.localhost}
+      BACKOFFICE_AUTH_HOST: ${BACKOFFICE_AUTH_HOST:-auth.localhost}
+      OBJECT_STORAGE_HOST: ${OBJECT_STORAGE_HOST:-objects.localhost}
+      CHANNEL_MANAGER_WEBHOOK_HOST: ${CHANNEL_MANAGER_WEBHOOK_HOST:-channels.localhost}
+      PAYMENT_WEBHOOK_HOST: ${PAYMENT_WEBHOOK_HOST:-payments.localhost}
     ports:
-      - "${EDGE_BIND_ADDRESS:-0.0.0.0}:${EDGE_HTTP_PORT:-80}:80"
-      - "${EDGE_BIND_ADDRESS:-0.0.0.0}:${EDGE_HTTPS_PORT:-443}:443"
-      - "${EDGE_BIND_ADDRESS:-0.0.0.0}:${EDGE_HTTPS_PORT:-443}:443/udp"
+      - "${EDGE_BIND_ADDRESS:-0.0.0.0}:${EDGE_HTTP_PORT:-80}:8080"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - ./nginx/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     depends_on:
       keycloak:
         condition: service_healthy
@@ -239,7 +241,6 @@ services:
     tmpfs:
       - /tmp
     cap_drop: ["ALL"]
-    cap_add: ["NET_BIND_SERVICE"]
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -250,8 +251,6 @@ volumes:
   redis-data:
   kafka-data:
   minio-data:
-  caddy-data:
-  caddy-config:
 
 networks:
   vistay:

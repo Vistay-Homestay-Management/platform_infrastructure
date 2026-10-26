@@ -55,15 +55,19 @@ jobs:
           if (Get-ChildItem certs/generated -Recurse -File | Where-Object Name -in @('ca.key', 'ca.p12')) {
             throw 'CA private material must not survive generation.'
           }
-      - name: Validate Caddy configuration
+      - name: Validate Nginx configuration
         run: |
-          CADDY_IMAGE="$(sed -n 's/^CADDY_IMAGE=//p' .env.example)"
+          NGINX_IMAGE="$(sed -n 's/^NGINX_IMAGE=//p' .env.example)"
           docker run --rm \
-            --volume "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            "$CADDY_IMAGE" caddy fmt --diff /etc/caddy/Caddyfile
-          docker run --rm \
-            --volume "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            "$CADDY_IMAGE" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            --env BACKOFFICE_GRAPHQL_HOST=graphql.localhost \
+            --env KEYCLOAK_HOST=identity.localhost \
+            --env BACKOFFICE_WEB_HOST=admin.localhost \
+            --env BACKOFFICE_AUTH_HOST=auth.localhost \
+            --env OBJECT_STORAGE_HOST=objects.localhost \
+            --env CHANNEL_MANAGER_WEBHOOK_HOST=channels.localhost \
+            --env PAYMENT_WEBHOOK_HOST=payments.localhost \
+            --volume "$PWD/nginx/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            "$NGINX_IMAGE" nginx -t
       - name: Test current and rollback Hive Router images
         shell: pwsh
         run: ./scripts/Test-HiveRouterCompatibility.ps1 -EnvFile .env.example
@@ -81,7 +85,6 @@ jobs:
     timeout-minutes: 15
     env:
       EDGE_HTTP_PORT: '18080'
-      EDGE_HTTPS_PORT: '18443'
       POSTGRES_PORT: '15432'
     steps:
       - uses: actions/checkout@v7

@@ -1,6 +1,6 @@
 # ViStay Platform Infrastructure
 
-ViStay's local platform stack uses Caddy as the only public ingress and the
+ViStay's local platform stack uses Nginx as the only public ingress and the
 Docker image of GraphQL Hive Router for the Backoffice federated GraphQL API.
 The deprecated Spring gateway is not part of the topology.
 
@@ -18,19 +18,20 @@ docker compose -f compose.yaml -f compose.full.yaml --env-file .env --profile ep
 ```
 
 The profile contains PostgreSQL, Redis, Kafka, Keycloak, Authentication, User,
-Notification, the Admin frontend, Hive Router, and Caddy. `full` additionally
+Notification, Finance, Payment, the Admin frontend, Hive Router, and Nginx. `full` additionally
 starts the bounded contexts scheduled for later epics. The checked-in
 `.env.example` is for isolated local/CI smoke tests only.
 
 Important trust boundaries:
 
-- Caddy alone publishes public ports. Keycloak admin endpoints stay internal.
+- Nginx alone publishes the public HTTP port. Keycloak admin endpoints stay internal.
+- VietQR callbacks remain disabled until the production HTTPS and merchant UAT gates pass.
 - Only the Backoffice realm is exposed during Epic 01; Host and Customer are deferred.
 - Kafka uses TLS, distinct SCRAM principals, deny-by-default ACLs, and exactly
-  the three Epic 01 contract topics.
+  the reviewed Epic 01 and Payment contract topics.
 - Internal User authorization RPCs require a CA-issued client certificate,
   the Authentication SPIFFE URI, and a deadline no longer than two seconds.
-- Authentication, User, and Notification use separate runtime and migrator
+- Authentication, User, Notification, Finance, and Payment use separate runtime and migrator
   database roles. Runtime roles have no schema or database creation rights.
 
 Run the static gates with:
@@ -43,7 +44,7 @@ Run the static gates with:
 
 ## Federation contracts
 
-`router/backoffice/subgraphs` vendors the reviewed User and Notification SDLs
+`router/backoffice/subgraphs` vendors the reviewed User, Notification, and Payment SDLs
 from `platform_contracts`. `Compose-Supergraph.ps1` composes them into the
 checked-in Hive Router supergraph. Update the source commit comment whenever a
 contract is refreshed.

@@ -35,20 +35,20 @@ if ($LASTEXITCODE -ne 0) {
 $configuration = $configurationJson | ConvertFrom-Json
 $serviceNames = @($configuration.services.PSObject.Properties.Name)
 
-foreach ($requiredService in @('caddy', 'keycloak', 'router-backoffice')) {
+foreach ($requiredService in @('nginx', 'keycloak', 'router-backoffice')) {
     if ($requiredService -notin $serviceNames) {
         throw "Missing required edge service: $requiredService"
     }
 }
 
 if ($IncludeEpic01) {
-    foreach ($requiredService in @('authentication', 'user', 'notification', 'frontend-admin', 'kafka-init')) {
+    foreach ($requiredService in @('authentication', 'user', 'notification', 'finance', 'payment', 'frontend-admin', 'kafka-init')) {
         if ($requiredService -notin $serviceNames) {
             throw "Missing required Epic 01 service: $requiredService"
         }
     }
 
-    foreach ($excludedService in @('property', 'booking', 'finance', 'operations', 'ota', 'media', 'warehouse')) {
+    foreach ($excludedService in @('property', 'booking', 'operations', 'ota', 'media', 'warehouse')) {
         if ($excludedService -in $serviceNames) {
             throw "Epic 01 must not start unrelated bounded context: $excludedService"
         }
@@ -60,7 +60,7 @@ if ('gateway' -in $serviceNames) {
 }
 
 $immutableImagePattern = '^[^\s:@]+(?:/[^\s:@]+)*:[^\s@]+@sha256:[0-9a-f]{64}$'
-foreach ($edgeService in @('caddy', 'keycloak', 'router-backoffice')) {
+foreach ($edgeService in @('nginx', 'keycloak', 'router-backoffice')) {
     $image = $configuration.services.$edgeService.image
     if ($image -notmatch $immutableImagePattern) {
         throw "$edgeService must use an immutable version tag and sha256 digest; got '$image'."
@@ -87,8 +87,8 @@ foreach ($serviceProperty in $configuration.services.PSObject.Properties) {
 }
 
 $publicServices = @($publicServices | Sort-Object -Unique)
-if ($publicServices.Count -ne 1 -or $publicServices[0] -ne 'caddy') {
-    throw "Caddy must be the sole public ingress; found: $($publicServices -join ', ')."
+if ($publicServices.Count -ne 1 -or $publicServices[0] -ne 'nginx') {
+    throw "Nginx must be the sole public ingress; found: $($publicServices -join ', ')."
 }
 
 foreach ($internalService in @('keycloak', 'router-backoffice')) {
@@ -98,10 +98,10 @@ foreach ($internalService in @('keycloak', 'router-backoffice')) {
     }
 }
 
-$caddyTargets = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'caddy/Caddyfile')
-foreach ($expectedTarget in @('router-backoffice:4000', 'keycloak:8080', 'authentication:8080', 'minio:9000', 'ota:8080')) {
-    if (-not $caddyTargets.Contains($expectedTarget)) {
-        throw "Caddy route is missing expected internal target '$expectedTarget'."
+$nginxTargets = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'nginx/templates/default.conf.template')
+foreach ($expectedTarget in @('router-backoffice:4000', 'keycloak:8080', 'authentication:8080', 'minio:9000', 'ota:8080', 'payment:8080')) {
+    if (-not $nginxTargets.Contains($expectedTarget)) {
+        throw "Nginx route is missing expected internal target '$expectedTarget'."
     }
 }
 
@@ -119,6 +119,8 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         authentication = 'vistay-authentication'
         user = 'vistay-user'
         notification = 'vistay-notification'
+        finance = 'vistay-finance'
+        payment = 'vistay-payment'
     }
     $expectedDatabasePrincipals = @{
         authentication = @{
@@ -133,9 +135,17 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             App = 'vistay_notification_app'
             Migrator = 'vistay_notification_migrator'
         }
+        finance = @{
+            App = 'vistay_finance_app'
+            Migrator = 'vistay_finance_migrator'
+        }
+        payment = @{
+            App = 'vistay_payment_app'
+            Migrator = 'vistay_payment_migrator'
+        }
     }
     $renderedKafkaCredentials = @()
-    foreach ($serviceName in @('authentication', 'user', 'notification')) {
+    foreach ($serviceName in @('authentication', 'user', 'notification', 'finance', 'payment')) {
         $service = $configuration.services.$serviceName
         if ($service.environment.KEYCLOAK_BACKOFFICE_ISSUER -ne 'http://identity.localhost/realms/vistay-backoffice') {
             throw "$serviceName must validate the public Backoffice issuer."
@@ -176,7 +186,7 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             throw "$serviceName may mount only the role-scoped Kafka client trust bundle."
         }
     }
-    if (@($renderedKafkaCredentials | Sort-Object -Unique).Count -ne 3) {
+    if (@($renderedKafkaCredentials | Sort-Object -Unique).Count -ne 5) {
         throw 'Epic 01 services must not share Kafka SCRAM credentials.'
     }
 
@@ -228,11 +238,11 @@ foreach ($requiredSetting in @('enabled: true', 'require_authentication: true', 
     }
 }
 
-if (-not $caddyTargets.Contains('@identity_public path /realms/vistay-backoffice/* /resources/*')) {
-    throw 'Caddy must allowlist only the active Backoffice realm and resource paths.'
+if (-not $nginxTargets.Contains('^/(realms/vistay-backoffice/|resources/)')) {
+    throw 'Nginx must allowlist only the active Backoffice realm and resource paths.'
 }
-if ($caddyTargets -match '(?m)^\s*reverse_proxy\s+keycloak:8080\s*$') {
-    throw 'Caddy must not expose the entire Keycloak surface, including /admin.'
+if ($nginxTargets -match '(?m)^\s*location\s+/\s*\{\s*proxy_pass\s+http://keycloak:8080') {
+    throw 'Nginx must not expose the entire Keycloak surface, including /admin.'
 }
 
-Write-Host 'Edge topology policy passed: Caddy is the only public ingress and all edge images are immutable.'
+Write-Host 'Edge topology policy passed: Nginx is the only public ingress and all edge images are immutable.'
