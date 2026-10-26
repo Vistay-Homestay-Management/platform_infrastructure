@@ -66,7 +66,9 @@ jobs:
             --env OBJECT_STORAGE_HOST=objects.localhost \
             --env CHANNEL_MANAGER_WEBHOOK_HOST=channels.localhost \
             --env PAYMENT_WEBHOOK_HOST=payments.localhost \
+            --env 'NGINX_ENVSUBST_FILTER=^(BACKOFFICE_GRAPHQL_HOST|KEYCLOAK_HOST|BACKOFFICE_WEB_HOST|BACKOFFICE_AUTH_HOST|OBJECT_STORAGE_HOST|CHANNEL_MANAGER_WEBHOOK_HOST|PAYMENT_WEBHOOK_HOST)$' \
             --volume "$PWD/nginx/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            --volume "$PWD/nginx/proxy_params:/etc/nginx/proxy_params:ro" \
             "$NGINX_IMAGE" nginx -t
       - name: Test current and rollback Hive Router images
         shell: pwsh
