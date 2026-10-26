@@ -8,6 +8,7 @@ FROM (VALUES
   ('vistay_property_db'),
   ('vistay_booking_db'),
   ('vistay_finance_db'),
+  ('vistay_payment_db'),
   ('vistay_operations_db'),
   ('vistay_ota_db'),
   ('vistay_notification_db'),

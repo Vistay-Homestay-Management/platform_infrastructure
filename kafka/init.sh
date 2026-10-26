@@ -21,6 +21,7 @@ create_user vistay-user "$KAFKA_USER_PASSWORD"
 create_user vistay-property "$KAFKA_PROPERTY_PASSWORD"
 create_user vistay-booking "$KAFKA_BOOKING_PASSWORD"
 create_user vistay-finance "$KAFKA_FINANCE_PASSWORD"
+create_user vistay-payment "$KAFKA_PAYMENT_PASSWORD"
 create_user vistay-operations "$KAFKA_OPERATIONS_PASSWORD"
 create_user vistay-ota "$KAFKA_OTA_PASSWORD"
 create_user vistay-notification "$KAFKA_NOTIFICATION_PASSWORD"
@@ -43,6 +44,11 @@ create_topic() {
 create_topic vistay.auth.account-provisioned.v1
 create_topic vistay.user.profile-provisioned.v1
 create_topic vistay.notification.notification-created.v1
+create_topic vistay.payment.intent-created.v1
+create_topic vistay.payment.qr-ready.v1
+create_topic vistay.payment.intent-expired.v1
+create_topic vistay.payment.transaction-confirmed.v1
+create_topic vistay.payment.transaction-unmatched.v1
 
 grant_producer() {
   local principal="$1"
@@ -83,6 +89,12 @@ grant_consumer vistay-user vistay.auth.account-provisioned.v1 vistay-user
 grant_producer vistay-user vistay.user.profile-provisioned.v1
 grant_consumer vistay-notification vistay.user.profile-provisioned.v1 vistay-notification
 grant_producer vistay-notification vistay.notification.notification-created.v1
+grant_producer vistay-payment vistay.payment.intent-created.v1
+grant_producer vistay-payment vistay.payment.qr-ready.v1
+grant_producer vistay-payment vistay.payment.intent-expired.v1
+grant_producer vistay-payment vistay.payment.transaction-confirmed.v1
+grant_producer vistay-payment vistay.payment.transaction-unmatched.v1
+grant_consumer vistay-finance vistay.payment.transaction-confirmed.v1 vistay-finance-payment-confirmed-v1
 
 client_config=/tmp/vistay-client.properties
 cat >"$client_config" <<EOF

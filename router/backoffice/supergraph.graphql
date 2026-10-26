@@ -5,6 +5,7 @@ schema
   @link(url: "https://specs.apollo.dev/requiresScopes/v0.1", for: SECURITY)
 {
   query: Query
+  mutation: Mutation
   subscription: Subscription
 }
 
@@ -43,6 +44,21 @@ type BackofficeViewer
   authorizationVersion: Int!
 }
 
+input CancelPaymentIntentInput
+  @join__type(graph: PAYMENT)
+{
+  paymentIntentId: ID!
+  expectedVersion: Int!
+  reason: String!
+}
+
+input CreateVietQrPaymentIntentInput
+  @join__type(graph: PAYMENT)
+{
+  financePaymentRequestId: ID!
+  idempotencyKey: String!
+}
+
 """
 An opaque non-negative decimal sequence. Clients must persist and return it
 unchanged; its numeric representation is an implementation detail.
@@ -60,6 +76,7 @@ scalar join__FieldSet
 
 enum join__Graph {
   NOTIFICATION @join__graph(name: "notification", url: "http://service-notification:8080/graphql")
+  PAYMENT @join__graph(name: "payment", url: "http://service-payment:8080/graphql")
   USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
 }
 
@@ -75,6 +92,13 @@ enum link__Purpose {
   `EXECUTION` features provide metadata necessary for operation execution.
   """
   EXECUTION
+}
+
+type Mutation
+  @join__type(graph: PAYMENT)
+{
+  createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @authenticated
+  cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @authenticated
 }
 
 type Notification
@@ -111,10 +135,40 @@ type NotificationStreamEvent
   notification: Notification!
 }
 
+type PaymentIntent
+  @join__type(graph: PAYMENT, key: "id")
+{
+  id: ID!
+  intentCode: String!
+  financePaymentRequestId: ID!
+  amount: String!
+  currency: String!
+  status: PaymentIntentStatus!
+  qrPayload: String
+  qrImageDataUri: String
+  expiresAt: String!
+  version: Int!
+}
+
+enum PaymentIntentStatus
+  @join__type(graph: PAYMENT)
+{
+  CREATED @join__enumValue(graph: PAYMENT)
+  QR_READY @join__enumValue(graph: PAYMENT)
+  PENDING @join__enumValue(graph: PAYMENT)
+  SUCCEEDED @join__enumValue(graph: PAYMENT)
+  FAILED @join__enumValue(graph: PAYMENT)
+  EXPIRED @join__enumValue(graph: PAYMENT)
+  CANCELLED @join__enumValue(graph: PAYMENT)
+}
+
 type Query
   @join__type(graph: NOTIFICATION)
+  @join__type(graph: PAYMENT)
   @join__type(graph: USER)
 {
+  paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+
   """The profile bound to the authenticated Backoffice access token."""
   viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
 }

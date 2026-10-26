@@ -8,3 +8,7 @@ subgraphs:
     routing_url: http://service-notification:8080/graphql
     schema:
       file: subgraphs/notification.graphql
+  payment:
+    routing_url: http://service-payment:8080/graphql
+    schema:
+      file: subgraphs/payment.graphql

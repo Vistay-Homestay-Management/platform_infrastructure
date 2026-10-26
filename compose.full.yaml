@@ -134,17 +134,56 @@ services:
   finance:
     container_name: service-finance
     build: ../service_finance
-    profiles: ["full"]
+    profiles: ["epic01", "full"]
     environment:
       <<: *service-environment
       DB_NAME: vistay_finance_db
-      DB_USERNAME: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_USERNAME: vistay_finance_app
+      DB_PASSWORD: ${FINANCE_DB_APP_PASSWORD}
+      SPRING_FLYWAY_USER: vistay_finance_migrator
+      SPRING_FLYWAY_PASSWORD: ${FINANCE_DB_MIGRATOR_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-finance" password="${KAFKA_FINANCE_PASSWORD}";
-    expose: ["8080"]
+      GRPC_SERVER_PORT: 9090
+    expose: ["8080", "9090"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
     depends_on: *service-dependencies
+    networks: [vistay]
+
+  payment:
+    container_name: service-payment
+    build: ../service_payment
+    profiles: ["epic01", "full"]
+    environment:
+      <<: *service-environment
+      DB_NAME: vistay_payment_db
+      DB_USERNAME: vistay_payment_app
+      DB_PASSWORD: ${PAYMENT_DB_APP_PASSWORD}
+      SPRING_FLYWAY_USER: vistay_payment_migrator
+      SPRING_FLYWAY_PASSWORD: ${PAYMENT_DB_MIGRATOR_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-payment" password="${KAFKA_PAYMENT_PASSWORD}";
+      FINANCE_GRPC_ADDRESS: static://finance:9090
+      GRPC_SERVER_PORT: 9090
+      PAYMENT_ACTIVATION_MODE: ${PAYMENT_ACTIVATION_MODE:-DISABLED}
+      VIETQR_BASE_URL: ${VIETQR_BASE_URL:-https://api.vietqr.io}
+      VIETQR_CLIENT_ID: ${VIETQR_CLIENT_ID:-}
+      VIETQR_API_KEY: ${VIETQR_API_KEY:-}
+      VIETQR_BANK_BIN: ${VIETQR_BANK_BIN:-}
+      VIETQR_ACCOUNT_NUMBER: ${VIETQR_ACCOUNT_NUMBER:-}
+      VIETQR_ACCOUNT_NAME: ${VIETQR_ACCOUNT_NAME:-}
+      VIETQR_CALLBACK_CLIENT_ID: ${VIETQR_CALLBACK_CLIENT_ID:-}
+      VIETQR_CALLBACK_CLIENT_SECRET: ${VIETQR_CALLBACK_CLIENT_SECRET:-}
+    expose: ["8080", "9090"]
+    volumes:
+      - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+    depends_on:
+      <<: *service-dependencies
+      redis:
+        condition: service_healthy
+      finance:
+        condition: service_started
     networks: [vistay]
 
   operations:
