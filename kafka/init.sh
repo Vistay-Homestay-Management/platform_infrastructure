@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# This file is mounted into a Linux container and must remain LF-only.
 set -euo pipefail
 
 admin_config=/etc/kafka/admin/admin.properties

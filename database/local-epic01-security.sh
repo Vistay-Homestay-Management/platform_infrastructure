@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# This file is executed by the Linux PostgreSQL image and must remain LF-only.
 set -euo pipefail
 
 psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --set ON_ERROR_STOP=1 \
