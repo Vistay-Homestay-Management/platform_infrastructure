@@ -196,7 +196,7 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         @{ Name = 'GRPC_SERVER_CERT'; Value = 'file:/run/secrets/grpc/server.crt' },
         @{ Name = 'GRPC_SERVER_KEY'; Value = 'file:/run/secrets/grpc/server.key' },
         @{ Name = 'GRPC_CLIENT_CA_CERT'; Value = 'file:/run/secrets/grpc/ca.crt' },
-        @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/authentication' },
+        @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/authentication,spiffe://vistay/service/booking' },
         @{ Name = 'GRPC_MAXIMUM_DEADLINE'; Value = '2s' }
     )) {
         if ($user.environment.($expected.Name) -ne $expected.Value) {
@@ -217,6 +217,16 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         $authenticationGrpcMount[0].read_only -ne $true -or
         (Split-Path -Leaf $authenticationGrpcMount[0].source) -ne 'authentication-client') {
         throw 'Authentication may mount only its role-scoped gRPC client bundle read-only.'
+    }
+
+    if ($IncludeFullStack) {
+        $bookingGrpcMount = @($configuration.services.booking.volumes |
+            Where-Object target -eq '/run/secrets/grpc')
+        if ($bookingGrpcMount.Count -ne 1 -or
+            $bookingGrpcMount[0].read_only -ne $true -or
+            (Split-Path -Leaf $bookingGrpcMount[0].source) -ne 'booking-client') {
+            throw 'Booking may mount only its role-scoped gRPC client bundle read-only.'
+        }
     }
 
     $brokerBundle = @($configuration.services.kafka.volumes |

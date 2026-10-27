@@ -1,0 +1,341 @@
+{
+  "info": {
+    "name": "ViStay Authorization E2E",
+    "description": "Manual maker-checker and Booking data-scope flow. Obtain maker/checker/target tokens with the vistay-backoffice-postman public client using Authorization Code + PKCE S256 before running the relevant folders.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.environment.get('runAuthorizationE2E') !== 'true') {",
+          "  pm.execution.skipRequest();",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Inspect maker and catalog",
+      "item": [
+        {
+          "name": "Maker viewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query { viewer { accountId profileId roles permissions grants { permissionCode scopes } authorizationVersion } }\"}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('maker viewer succeeds', () => { pm.response.to.have.status(200); pm.expect(body.errors).to.be.undefined; });",
+            "pm.environment.set('makerAccountId', body.data.viewer.accountId);",
+            "pm.environment.set('makerProfileId', body.data.viewer.profileId);"
+          ] } }]
+        },
+        {
+          "name": "ADMIN authorization catalog",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query { authorizationCatalog(accountType: ADMIN) { code accountType policies { permissionCode allowedScopes defaultScopes } } }\"}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('fixed role catalog is returned', () => pm.expect(body.data.authorizationCatalog.length).to.be.above(5));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "02 Establish checker quorum",
+      "item": [
+        {
+          "name": "Provision checker account",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "if (pm.environment.get('runAuthorizationE2E') !== 'true') pm.execution.skipRequest();",
+              "if (!pm.environment.get('checkerTemporaryPassword')) throw new Error('checkerTemporaryPassword is required');",
+              "if (!pm.environment.get('checkerProvisionKey')) pm.environment.set('checkerProvisionKey', pm.variables.replaceIn('{{$guid}}'));"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('checker account is provisioned', () => pm.response.to.have.status(201));",
+              "pm.environment.set('checkerAccountId', pm.response.json().id);"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{checkerProvisionKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{checkerEmail}}\",\"fullName\":\"{{checkerFullName}}\",\"temporaryPassword\":\"{{checkerTemporaryPassword}}\"}" },
+            "url": "{{authBase}}/api/v1/backoffice/accounts"
+          }
+        },
+        {
+          "name": "Resolve checker authorization subject",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query($accountId: ID!) { authorizationSubjectByAccount(accountType: ADMIN, accountId: $accountId) { id accountId profileId authorizationVersion } }\",\"variables\":{\"accountId\":\"{{checkerAccountId}}\"}}" },
+            "url": "{{graphqlUrl}}",
+            "description": "Kafka provisioning is asynchronous. Retry this request briefly if the profile event has not arrived yet."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const subject = pm.response.json().data.authorizationSubjectByAccount;",
+            "pm.environment.set('checkerSubjectId', subject.id);"
+          ] } }]
+        },
+        {
+          "name": "Use one-time bootstrap exception",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"mutation($target: ID!) { establishSecondApprover(targetSubjectId: $target, reason: \\\"Initial two-person authorization quorum\\\") { id authorizationVersion effectiveGrants { permissionCode scopes } } }\",\"variables\":{\"target\":\"{{checkerSubjectId}}\"}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('second approver established', () => pm.expect(body.errors).to.be.undefined);"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "03 Maker-checker role grant",
+      "item": [
+        {
+          "name": "Provision scoped target",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "if (!pm.environment.get('targetTemporaryPassword')) throw new Error('targetTemporaryPassword is required');",
+              "if (!pm.environment.get('targetProvisionKey')) pm.environment.set('targetProvisionKey', pm.variables.replaceIn('{{$guid}}'));"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.environment.set('targetAccountId', pm.response.json().id);"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{targetProvisionKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{targetEmail}}\",\"fullName\":\"{{targetFullName}}\",\"temporaryPassword\":\"{{targetTemporaryPassword}}\"}" },
+            "url": "{{authBase}}/api/v1/backoffice/accounts"
+          }
+        },
+        {
+          "name": "Resolve target subject",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query($accountId: ID!) { authorizationSubjectByAccount(accountType: ADMIN, accountId: $accountId) { id profileId authorizationVersion } }\",\"variables\":{\"accountId\":\"{{targetAccountId}}\"}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const subject = pm.response.json().data.authorizationSubjectByAccount;",
+            "pm.environment.set('targetSubjectId', subject.id);",
+            "pm.environment.set('targetProfileId', subject.profileId);",
+            "pm.environment.set('targetAuthorizationVersion', String(subject.authorizationVersion));"
+          ] } }]
+        },
+        {
+          "name": "Maker requests CTV OWN and ASSIGNED",
+          "event": [{ "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+            "if (!pm.environment.get('authorizationGrantKey')) pm.environment.set('authorizationGrantKey', pm.variables.replaceIn('{{$guid}}'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"mutation($input: RequestAuthorizationChangeInput!) { requestAuthorizationChange(input: $input) { id status targetSubjectId } }\",\"variables\":{\"input\":{\"targetSubjectId\":\"{{targetSubjectId}}\",\"roleCode\":\"CTV\",\"scopeOverrides\":[{\"permissionCode\":\"booking:read\",\"scopes\":[\"OWN\",\"ASSIGNED\"]}],\"reason\":\"Postman scoped booking verification\",\"expectedAuthorizationVersion\":{{targetAuthorizationVersion}},\"idempotencyKey\":\"{{authorizationGrantKey}}\"}}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const change = pm.response.json().data.requestAuthorizationChange;",
+            "pm.test('grant remains pending', () => pm.expect(change.status).to.eql('PENDING'));",
+            "pm.environment.set('authorizationRequestId', change.id);"
+          ] } }]
+        },
+        {
+          "name": "Maker cannot self-approve",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"mutation($id: ID!, $version: Int!) { approveAuthorizationChange(id: $id, reason: \\\"Maker must not approve own request\\\", expectedAuthorizationVersion: $version) { id status } }\",\"variables\":{\"id\":\"{{authorizationRequestId}}\",\"version\":{{targetAuthorizationVersion}}}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const errors = pm.response.json().errors || [];",
+            "pm.test('maker-checker violation is explicit', () => pm.expect(errors[0].extensions.code).to.eql('MAKER_CHECKER_VIOLATION'));"
+          ] } }]
+        },
+        {
+          "name": "Checker approves grant",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{checkerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"mutation($id: ID!, $version: Int!) { approveAuthorizationChange(id: $id, reason: \\\"Checker approved Postman scope test\\\", expectedAuthorizationVersion: $version) { id status } }\",\"variables\":{\"id\":\"{{authorizationRequestId}}\",\"version\":{{targetAuthorizationVersion}}}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json();",
+            "pm.test('checker approval succeeds', () => pm.expect(body.data.approveAuthorizationChange.status).to.eql('APPROVED'));"
+          ] } }]
+        },
+        {
+          "name": "Read target assignments after approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { authorizationSubject(subjectId: $id) { authorizationVersion assignments { id roleCode grants { permissionCode scopes } } } }\",\"variables\":{\"id\":\"{{targetSubjectId}}\"}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const subject = pm.response.json().data.authorizationSubject;",
+            "const assignment = subject.assignments.find(value => value.roleCode === 'CTV');",
+            "pm.environment.set('targetAuthorizationVersion', String(subject.authorizationVersion));",
+            "pm.environment.set('authorizationAssignmentId', assignment.id);"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "04 Booking scope proof",
+      "item": [
+        {
+          "name": "Target reads OWN booking",
+          "request": { "method": "POST", "header": [
+            { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-CSRF-Token", "value": "1" }
+          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode status totalAmount currency } }\",\"variables\":{\"id\":\"{{ownBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OWN booking allowed', () => pm.expect(pm.response.json().errors).to.be.undefined);"] } }]
+        },
+        {
+          "name": "Target reads ASSIGNED booking",
+          "request": { "method": "POST", "header": [
+            { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-CSRF-Token", "value": "1" }
+          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode status } }\",\"variables\":{\"id\":\"{{assignedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('ASSIGNED booking allowed', () => pm.expect(pm.response.json().errors).to.be.undefined);"] } }]
+        },
+        {
+          "name": "Target is denied unrelated booking",
+          "request": { "method": "POST", "header": [
+            { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-CSRF-Token", "value": "1" }
+          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id } }\",\"variables\":{\"id\":\"{{unrelatedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('wrong scope is explicit', () => pm.expect(pm.response.json().errors[0].extensions.code).to.eql('FORBIDDEN_SCOPE'));"
+          ] } }]
+        },
+        {
+          "name": "SUPER_ADMIN reads unrelated booking with ALL",
+          "request": { "method": "POST", "header": [
+            { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-CSRF-Token", "value": "1" }
+          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode } }\",\"variables\":{\"id\":\"{{unrelatedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('ALL scope allowed', () => pm.expect(pm.response.json().errors).to.be.undefined);"] } }]
+        }
+      ]
+    },
+    {
+      "name": "05 Immediate reduction and audit",
+      "item": [
+        {
+          "name": "Reduce CTV to booking OWN only",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"mutation($input: ReduceAuthorizationScopesInput!) { reduceAuthorizationScopes(input: $input) { authorizationVersion effectiveGrants { permissionCode scopes } } }\",\"variables\":{\"input\":{\"assignmentId\":\"{{authorizationAssignmentId}}\",\"retainedScopes\":[{\"permissionCode\":\"booking:read\",\"scopes\":[\"OWN\"]}],\"reason\":\"Reduce assigned access after Postman proof\",\"expectedAuthorizationVersion\":{{targetAuthorizationVersion}}}}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const subject = pm.response.json().data.reduceAuthorizationScopes;",
+            "pm.environment.set('targetAuthorizationVersion', String(subject.authorizationVersion));"
+          ] } }]
+        },
+        {
+          "name": "Revoke CTV assignment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"mutation($assignment: ID!, $version: Int!) { revokeRoleAssignment(assignmentId: $assignment, reason: \\\"Revoke completed Postman verification role\\\", expectedAuthorizationVersion: $version) { authorizationVersion assignments { id roleCode } } }\",\"variables\":{\"assignment\":\"{{authorizationAssignmentId}}\",\"version\":{{targetAuthorizationVersion}}}}" },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Authorization audit",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query($target: ID) { authorizationAudit(targetSubjectId: $target) { id action reason createdAt } }\",\"variables\":{\"target\":\"{{targetSubjectId}}\"}}" },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('authorization audit has evidence', () => pm.expect(pm.response.json().data.authorizationAudit.length).to.be.above(2));"
+          ] } }]
+        }
+      ]
+    }
+  ]
+}

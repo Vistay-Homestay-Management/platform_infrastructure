@@ -29,19 +29,115 @@ directive @link(url: String, as: String, for: link__Purpose, import: [link__Impo
 
 directive @requiresScopes(scopes: [[requiresScopes__Scope!]!]!) on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
 
+enum AccountType
+  @join__type(graph: USER)
+{
+  CUSTOMER @join__enumValue(graph: USER)
+  ADMIN @join__enumValue(graph: USER)
+  HOST @join__enumValue(graph: USER)
+}
+
+type AuthorizationAssignment
+  @join__type(graph: USER)
+{
+  id: ID!
+  roleCode: String!
+  validUntil: String
+  grants: [EffectiveGrant!]!
+}
+
+type AuthorizationAuditEvent
+  @join__type(graph: USER)
+{
+  id: ID!
+  actorSubjectId: ID
+  targetSubjectId: ID
+  action: String!
+  reason: String!
+  correlationId: String
+  createdAt: String!
+}
+
+type AuthorizationChangeRequest
+  @join__type(graph: USER)
+{
+  id: ID!
+  targetSubjectId: ID!
+  requestedBySubjectId: ID!
+  reviewedBySubjectId: ID
+  changeType: String!
+  status: AuthorizationChangeStatus!
+  roleCode: String!
+  reason: String!
+  reviewReason: String
+  expiresAt: String!
+  createdAt: String!
+}
+
+enum AuthorizationChangeStatus
+  @join__type(graph: USER)
+{
+  PENDING @join__enumValue(graph: USER)
+  APPROVED @join__enumValue(graph: USER)
+  REJECTED @join__enumValue(graph: USER)
+  EXPIRED @join__enumValue(graph: USER)
+  STALE @join__enumValue(graph: USER)
+}
+
+type AuthorizationPermissionPolicy
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  allowedScopes: [DataScope!]!
+  defaultScopes: [DataScope!]!
+}
+
+type AuthorizationRole
+  @join__type(graph: USER)
+{
+  code: String!
+  displayName: String!
+  accountType: AccountType!
+  policies: [AuthorizationPermissionPolicy!]!
+}
+
+type AuthorizationSubject
+  @join__type(graph: USER)
+{
+  id: ID!
+  accountType: AccountType!
+  accountId: ID!
+  profileId: ID!
+  active: Boolean!
+  authorizationVersion: Int!
+  assignments: [AuthorizationAssignment!]!
+  effectiveGrants: [EffectiveGrant!]!
+}
+
 type BackofficeViewer
   @join__type(graph: USER)
 {
-  """The Keycloak `sub` UUID from the Backoffice realm."""
   accountId: ID!
-
-  """The User service profile UUID; distinct from `accountId`."""
   profileId: ID!
   displayName: String!
   email: String!
   roles: [String!]!
   permissions: [String!]!
+  grants: [EffectiveGrant!]!
   authorizationVersion: Int!
+}
+
+type Booking
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  bookingCode: String!
+  propertyId: ID!
+  status: String!
+  checkInDate: String!
+  checkOutDate: String!
+  totalAmount: String!
+  currency: String!
 }
 
 input CancelPaymentIntentInput
@@ -66,15 +162,32 @@ unchanged; its numeric representation is an implementation detail.
 scalar Cursor
   @join__type(graph: NOTIFICATION)
 
+enum DataScope
+  @join__type(graph: USER)
+{
+  SELF @join__enumValue(graph: USER)
+  OWN @join__enumValue(graph: USER)
+  ASSIGNED @join__enumValue(graph: USER)
+  ALL @join__enumValue(graph: USER)
+}
+
 """An RFC 3339 timestamp with an offset."""
 scalar DateTime
   @join__type(graph: NOTIFICATION)
+
+type EffectiveGrant
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  scopes: [DataScope!]!
+}
 
 scalar join__DirectiveArguments
 
 scalar join__FieldSet
 
 enum join__Graph {
+  BOOKING @join__graph(name: "booking", url: "http://service-booking:8080/graphql")
   NOTIFICATION @join__graph(name: "notification", url: "http://service-notification:8080/graphql")
   PAYMENT @join__graph(name: "payment", url: "http://service-payment:8080/graphql")
   USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
@@ -96,9 +209,16 @@ enum link__Purpose {
 
 type Mutation
   @join__type(graph: PAYMENT)
+  @join__type(graph: USER)
 {
-  createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @authenticated
-  cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @authenticated
+  createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+  cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+  requestAuthorizationChange(input: RequestAuthorizationChangeInput!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
+  approveAuthorizationChange(id: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
+  rejectAuthorizationChange(id: ID!, reason: String!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
+  revokeRoleAssignment(assignmentId: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  reduceAuthorizationScopes(input: ReduceAuthorizationScopesInput!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  establishSecondApprover(targetSubjectId: ID!, reason: String!): AuthorizationSubject! @join__field(graph: USER) @authenticated
 }
 
 type Notification
@@ -162,18 +282,59 @@ enum PaymentIntentStatus
   CANCELLED @join__enumValue(graph: PAYMENT)
 }
 
+input PermissionScopeOverrideInput
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  scopes: [DataScope!]!
+}
+
 type Query
+  @join__type(graph: BOOKING)
   @join__type(graph: NOTIFICATION)
   @join__type(graph: PAYMENT)
   @join__type(graph: USER)
 {
+  booking(id: ID!): Booking! @join__field(graph: BOOKING) @authenticated
+  bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
   paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
-
-  """The profile bound to the authenticated Backoffice access token."""
   viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
+  authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @join__field(graph: USER) @authenticated
+  authorizationSubject(subjectId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  authorizationChangeRequests(status: AuthorizationChangeStatus = PENDING): [AuthorizationChangeRequest!]! @join__field(graph: USER) @authenticated
+  authorizationAudit(targetSubjectId: ID): [AuthorizationAuditEvent!]! @join__field(graph: USER) @authenticated
+}
+
+input ReduceAuthorizationScopesInput
+  @join__type(graph: USER)
+{
+  assignmentId: ID!
+  retainedScopes: [RetainedPermissionScopesInput!]!
+  reason: String!
+  expectedAuthorizationVersion: Int!
+}
+
+input RequestAuthorizationChangeInput
+  @join__type(graph: USER)
+{
+  targetSubjectId: ID!
+  roleCode: String!
+  scopeOverrides: [PermissionScopeOverrideInput!] = []
+  validUntil: String
+  reason: String!
+  expectedAuthorizationVersion: Int!
+  idempotencyKey: String!
 }
 
 scalar requiresScopes__Scope
+
+input RetainedPermissionScopesInput
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  scopes: [DataScope!]!
+}
 
 type Subscription
   @join__type(graph: NOTIFICATION)

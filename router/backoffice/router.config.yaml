@@ -103,7 +103,7 @@ traffic_shaping:
     keep_alive: 60s
 
 error_masking:
-  enabled: true
+  enabled: false
 
 log:
   level: info

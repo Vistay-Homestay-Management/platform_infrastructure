@@ -122,6 +122,20 @@ foreach ($clientId in @('vistay-backoffice-web', 'vistay-backoffice-mobile')) {
     Assert-BackofficeClient -Client $client -ProtocolMappers @($client.protocolMappers) -DefaultScopeNames @($client.defaultClientScopes)
 }
 
+$postman = Get-Client -Clients $realmClients -ClientId 'vistay-backoffice-postman'
+Assert-Contract ($postman.publicClient -eq $true) 'Postman must be a public client.'
+Assert-Contract ($postman.standardFlowEnabled -eq $true) 'Postman must enable Authorization Code flow.'
+Assert-Contract ($postman.directAccessGrantsEnabled -eq $false) 'Postman must disable password grants.'
+Assert-Contract ($postman.serviceAccountsEnabled -eq $false) 'Postman must not have a service account.'
+Assert-Contract ($postman.attributes.'pkce.code.challenge.method' -eq 'S256') 'Postman must require PKCE S256.'
+Assert-Contract (@($postman.redirectUris) -contains 'https://oauth.pstmn.io/v1/browser-callback') `
+    'Postman must allow only the documented browser callback.'
+$postmanMappers = @($postman.protocolMappers)
+Assert-Contract (@($postmanMappers | Where-Object name -eq 'backoffice-api-audience').Count -eq 1) `
+    'Postman must emit the Backoffice API audience.'
+Assert-Contract (@($postmanMappers | Where-Object name -eq 'backoffice-account-type').Count -eq 1) `
+    'Postman must emit account_type.'
+
 $facade = Get-Client -Clients $realmClients -ClientId 'vistay-auth-facade'
 Assert-Contract ($facade.publicClient -eq $false) 'The Auth facade must be confidential.'
 Assert-Contract ($facade.serviceAccountsEnabled -eq $true) 'The Auth facade service account must be enabled.'
