@@ -1,0 +1,63 @@
+{
+  "realm": "vistay-customer",
+  "displayName": "ViStay Customer",
+  "enabled": false,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": true,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "roles": {
+    "realm": [
+      { "name": "CUSTOMER", "description": "ViStay customer" }
+    ]
+  },
+  "defaultRoles": ["CUSTOMER"],
+  "clients": [
+    {
+      "clientId": "vistay-customer-api",
+      "name": "ViStay Customer API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true
+    },
+    {
+      "clientId": "vistay-customer-web",
+      "name": "ViStay Customer Web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://customer.localhost/*"],
+      "webOrigins": ["http://customer.localhost"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://customer.localhost/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "customer-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "vistay-customer-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,48 +1,83 @@
 # ViStay Platform Infrastructure
 
-Local development infrastructure, database bootstrap tooling, Apollo Federation routing, and reusable CI workflows for ViStay.
+ViStay's local platform stack uses Nginx as the only public ingress and the
+Docker image of GraphQL Hive Router for the Backoffice federated GraphQL API.
+The deprecated Spring gateway is not part of the topology.
 
-The repository is public and must never contain real endpoints, passwords, private keys, generated certificates, or database dumps.
+This public repository must never contain real passwords, private keys,
+generated certificates, database dumps, or production endpoints.
 
-Run the complete local platform with both Compose files:
+## Epic 01 local stack
+
+Generate role-scoped development certificates, then start only the services
+required by Epic 01:
 
 ```powershell
-docker compose -f compose.yaml -f compose.full.yaml --env-file .env --profile full up --build
+./scripts/Generate-DevCertificates.ps1
+docker compose -f compose.yaml -f compose.full.yaml --env-file .env --profile epic01 up --build
 ```
 
-## Planned profiles
+The profile contains PostgreSQL, Redis, Kafka, Keycloak, Authentication, User,
+Notification, Finance, Payment, the Admin frontend, Hive Router, and Nginx. `full` additionally
+starts the bounded contexts scheduled for later epics. The checked-in
+`.env.example` is for isolated local/CI smoke tests only.
 
-- `dependencies`: PostgreSQL, Kafka, Redis, MinIO, and Apollo Router.
-- `full`: dependencies plus all ViStay services and web applications.
+Important trust boundaries:
 
-Production application deployment is intentionally excluded until remote SSH or Tailscale SSH access is available.
+- Nginx alone publishes the public HTTP port. Keycloak admin endpoints stay internal.
+- VietQR callbacks remain disabled until the production HTTPS and merchant UAT gates pass.
+- Only the Backoffice realm is exposed during Epic 01; Host and Customer are deferred.
+- Kafka uses TLS, distinct SCRAM principals, deny-by-default ACLs, and exactly
+  the reviewed Epic 01 and Payment contract topics.
+- Internal User authorization RPCs require a CA-issued client certificate,
+  the Authentication SPIFFE URI, and a deadline no longer than two seconds.
+- Authentication, User, Notification, Finance, and Payment use separate runtime and migrator
+  database roles. Runtime roles have no schema or database creation rights.
 
-## Remote PostgreSQL provisioning
+Run the static gates with:
 
-The provisioning command creates one database per bounded context, separates
-NOLOGIN ownership from migrator and runtime roles, applies the checked-in
-Flyway migrations, and grants runtime DML without DDL.
+```powershell
+./scripts/Test-EdgeTopology.ps1 -IncludeEpic01
+./scripts/Test-KeycloakContract.ps1
+./scripts/Compose-Supergraph.ps1
+```
+
+## Federation contracts
+
+`router/backoffice/subgraphs` vendors the reviewed User, Notification, and Payment SDLs
+from `platform_contracts`. `Compose-Supergraph.ps1` composes them into the
+checked-in Hive Router supergraph. Update the source commit comment whenever a
+contract is refreshed.
+
+## Remote PostgreSQL operations
+
+Provisioning creates one database per bounded context, separates NOLOGIN
+ownership from migrator and runtime roles, applies Flyway migrations, and
+grants runtime DML without DDL:
 
 ```powershell
 $password = Read-Host 'PostgreSQL bootstrap password' -AsSecureString
 ./scripts/Initialize-RemoteDatabases.ps1 -BootstrapPassword $password
 ./scripts/Test-RemoteDatabases.ps1
+./scripts/Audit-RemoteDatabases.ps1
+./scripts/Backup-RemoteDatabases.ps1
 ```
 
-Generated credentials are encrypted for the current Windows user with DPAPI
-and written outside this repository to `.secrets/database-credentials.xml`.
-Never copy that file into source control.
+PostgreSQL TLS is required by default. The current Tailscale database endpoint
+does not offer PostgreSQL TLS, so an exceptional run must state both
+`-SslMode disable` and `-AllowInsecureTailscaleTransport`. Tailscale encrypts
+the network path, but this is still not a substitute for PostgreSQL TLS and
+must remain a tracked infrastructure gap.
 
-After provisioning, publish only the runtime credentials to protected GitHub
+Generated credentials are encrypted for the current Windows user with DPAPI
+under `.secrets`. Backups are authenticated encrypted archives under
+`.backups`, include SHA-256 hashes, and must pass an actual restore smoke test.
+Both directories are outside source control.
+
+After provisioning, publish only runtime credentials to protected GitHub
 environments:
 
 ```powershell
 ./scripts/Publish-GitHubEnvironmentSecrets.ps1
 ./scripts/Publish-GitHubSecuritySecrets.ps1
 ```
-
-## Federation composition
-
-`scripts/Compose-Supergraph.ps1` composes the nine business subgraphs into
-the checked-in `supergraph.graphql` consumed by Apollo Router. Composition
-must pass whenever a subgraph schema changes.

@@ -1,0 +1,187 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.4", for: EXECUTION)
+  @link(url: "https://specs.apollo.dev/authenticated/v0.1", for: SECURITY)
+  @link(url: "https://specs.apollo.dev/requiresScopes/v0.1", for: SECURITY)
+{
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+directive @authenticated on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+directive @join__directive(graphs: [join__Graph!], name: String!, args: join__DirectiveArguments) repeatable on SCHEMA | OBJECT | INTERFACE | FIELD_DEFINITION
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean, overrideLabel: String) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+directive @requiresScopes(scopes: [[requiresScopes__Scope!]!]!) on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+type BackofficeViewer
+  @join__type(graph: USER)
+{
+  """The Keycloak `sub` UUID from the Backoffice realm."""
+  accountId: ID!
+
+  """The User service profile UUID; distinct from `accountId`."""
+  profileId: ID!
+  displayName: String!
+  email: String!
+  roles: [String!]!
+  permissions: [String!]!
+  authorizationVersion: Int!
+}
+
+input CancelPaymentIntentInput
+  @join__type(graph: PAYMENT)
+{
+  paymentIntentId: ID!
+  expectedVersion: Int!
+  reason: String!
+}
+
+input CreateVietQrPaymentIntentInput
+  @join__type(graph: PAYMENT)
+{
+  financePaymentRequestId: ID!
+  idempotencyKey: String!
+}
+
+"""
+An opaque non-negative decimal sequence. Clients must persist and return it
+unchanged; its numeric representation is an implementation detail.
+"""
+scalar Cursor
+  @join__type(graph: NOTIFICATION)
+
+"""An RFC 3339 timestamp with an offset."""
+scalar DateTime
+  @join__type(graph: NOTIFICATION)
+
+scalar join__DirectiveArguments
+
+scalar join__FieldSet
+
+enum join__Graph {
+  NOTIFICATION @join__graph(name: "notification", url: "http://service-notification:8080/graphql")
+  PAYMENT @join__graph(name: "payment", url: "http://service-payment:8080/graphql")
+  USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type Mutation
+  @join__type(graph: PAYMENT)
+{
+  createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @authenticated
+  cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @authenticated
+}
+
+type Notification
+  @join__type(graph: NOTIFICATION)
+{
+  id: ID!
+  category: NotificationCategory!
+  title: String!
+  body: String!
+  channels: [NotificationChannel!]!
+  createdAt: DateTime!
+  readAt: DateTime
+}
+
+enum NotificationCategory
+  @join__type(graph: NOTIFICATION)
+{
+  WELCOME @join__enumValue(graph: NOTIFICATION)
+  SECURITY @join__enumValue(graph: NOTIFICATION)
+}
+
+enum NotificationChannel
+  @join__type(graph: NOTIFICATION)
+{
+  IN_APP @join__enumValue(graph: NOTIFICATION)
+  EMAIL @join__enumValue(graph: NOTIFICATION)
+  PUSH @join__enumValue(graph: NOTIFICATION)
+}
+
+type NotificationStreamEvent
+  @join__type(graph: NOTIFICATION)
+{
+  cursor: Cursor!
+  notification: Notification!
+}
+
+type PaymentIntent
+  @join__type(graph: PAYMENT, key: "id")
+{
+  id: ID!
+  intentCode: String!
+  financePaymentRequestId: ID!
+  amount: String!
+  currency: String!
+  status: PaymentIntentStatus!
+  qrPayload: String
+  qrImageDataUri: String
+  expiresAt: String!
+  version: Int!
+}
+
+enum PaymentIntentStatus
+  @join__type(graph: PAYMENT)
+{
+  CREATED @join__enumValue(graph: PAYMENT)
+  QR_READY @join__enumValue(graph: PAYMENT)
+  PENDING @join__enumValue(graph: PAYMENT)
+  SUCCEEDED @join__enumValue(graph: PAYMENT)
+  FAILED @join__enumValue(graph: PAYMENT)
+  EXPIRED @join__enumValue(graph: PAYMENT)
+  CANCELLED @join__enumValue(graph: PAYMENT)
+}
+
+type Query
+  @join__type(graph: NOTIFICATION)
+  @join__type(graph: PAYMENT)
+  @join__type(graph: USER)
+{
+  paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+
+  """The profile bound to the authenticated Backoffice access token."""
+  viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
+}
+
+scalar requiresScopes__Scope
+
+type Subscription
+  @join__type(graph: NOTIFICATION)
+{
+  """
+  Streams this viewer's durable inbox strictly after `afterCursor`. A null
+  cursor starts at the earliest retained entry. Delivery is at least once, so
+  clients deduplicate by `notification.id` and persist each received cursor.
+  """
+  notificationStream(afterCursor: Cursor): NotificationStreamEvent! @authenticated @requiresScopes(scopes: [["notifications:read"]])
+}
