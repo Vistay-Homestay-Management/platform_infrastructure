@@ -2,7 +2,7 @@
 
 ViStay's local platform stack uses Nginx as the only public ingress and the
 Docker image of GraphQL Hive Router for the Backoffice federated GraphQL API.
-The deprecated Spring gateway is not part of the topology.
+The retired Spring gateway repository is archived and is not part of the topology.
 
 This public repository must never contain real passwords, private keys,
 generated certificates, database dumps, or production endpoints.
