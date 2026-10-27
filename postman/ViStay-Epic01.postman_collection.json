@@ -1,0 +1,484 @@
+{
+  "info": {
+    "_postman_id": "9a94af33-071d-4d82-a1d9-a830886da2e1",
+    "name": "ViStay Epic 01",
+    "description": "Public-edge smoke and opt-in business API checks for the ViStay Epic 01 local stack. Mutating requests are skipped unless their matching run flag is explicitly enabled in the selected environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Safe smoke",
+      "item": [
+        {
+          "name": "Edge health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{edgeBase}}/healthz"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('edge is healthy', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.text()).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin shell",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{adminBase}}/"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('admin shell is served', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.text()).to.include('<div id=\"root\"></div>');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GraphQL readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{graphqlBase}}/_edge/ready"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('GraphQL edge is ready', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Authentication readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{authBase}}/_edge/ready"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('authentication is ready', () => pm.response.to.have.status(200));",
+                  "pm.test('Spring reports UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Backoffice OIDC discovery",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{identityBase}}/realms/vistay-backoffice/.well-known/openid-configuration"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OIDC discovery is available', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('issuer matches local Backoffice realm', () => {",
+                  "  pm.expect(body.issuer).to.eql(`${pm.environment.get('identityBase')}/realms/vistay-backoffice`);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Viewer rejects missing token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationName\": \"Viewer\",\n  \"query\": \"query Viewer { viewer { accountId } }\"\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('missing JWT is rejected', () => pm.response.to.have.status(401));",
+                  "pm.test('gateway returns a JWT lookup error', () => {",
+                  "  pm.expect(pm.response.json().errors[0].extensions.code).to.eql('JWT_LOOKUP_FAILED');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Identity provisioning",
+      "item": [
+        {
+          "name": "Bootstrap Backoffice account",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runBootstrap') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('bootstrapToken')) throw new Error('bootstrapToken is required');",
+                  "if (!pm.environment.get('bootstrapEmail')) pm.environment.set('bootstrapEmail', `postman.${Date.now()}@vistay.local`);",
+                  "if (!pm.environment.get('idempotencyKey')) pm.environment.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.variables.set('correlationId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('account is provisioned', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('response contains an active admin account', () => {",
+                  "  pm.expect(body.id).to.be.a('string');",
+                  "  pm.expect(body.accountType).to.eql('ADMIN');",
+                  "  pm.expect(body.status).to.eql('ACTIVE');",
+                  "});",
+                  "pm.environment.set('accountId', body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-ViStay-Bootstrap-Token", "value": "{{bootstrapToken}}", "type": "text" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}", "type": "text" },
+              { "key": "X-Correlation-Id", "value": "{{correlationId}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{bootstrapEmail}}\",\n  \"fullName\": \"{{bootstrapFullName}}\",\n  \"temporaryPassword\": \"{{bootstrapPassword}}\"\n}"
+            },
+            "url": "{{authBase}}/api/v1/backoffice/accounts/bootstrap",
+            "description": "Opt in with runBootstrap=true. Reusing the same Idempotency-Key with the same body returns the original account."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authenticated GraphQL",
+      "item": [
+        {
+          "name": "Viewer",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('accessToken')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('viewer request succeeds', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('viewer has no GraphQL errors', () => pm.expect(body.errors).to.be.undefined);",
+                  "pm.test('viewer identity is present', () => pm.expect(body.data.viewer.accountId).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationName\": \"Viewer\",\n  \"query\": \"query Viewer { viewer { accountId profileId displayName email roles permissions authorizationVersion } }\"\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Notification stream",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runNotificationStream') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('accessToken')) throw new Error('accessToken is required');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "text/event-stream" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationName\": \"NotificationStream\",\n  \"query\": \"subscription NotificationStream($afterCursor: Cursor) { notificationStream(afterCursor: $afterCursor) { cursor notification { id category title body channels createdAt readAt } } }\",\n  \"variables\": {\n    \"afterCursor\": {{notificationCursor}}\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}",
+            "description": "Opt in with runNotificationStream=true. This is a long-lived GraphQL-over-SSE response. notificationCursor must be null or a quoted canonical decimal string."
+          }
+        },
+        {
+          "name": "Get payment intent",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('accessToken') || !pm.environment.get('paymentIntentId')) pm.execution.skipRequest();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('payment query succeeds', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('payment query has no GraphQL errors', () => pm.expect(body.errors).to.be.undefined);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationName\": \"PaymentIntent\",\n  \"query\": \"query PaymentIntent($id: ID!) { paymentIntent(id: $id) { id intentCode financePaymentRequestId amount currency status qrPayload qrImageDataUri expiresAt version } }\",\n  \"variables\": {\n    \"id\": \"{{paymentIntentId}}\"\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Create VietQR payment intent",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runPaymentMutations') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('accessToken') || !pm.environment.get('financePaymentRequestId')) throw new Error('accessToken and financePaymentRequestId are required');",
+                  "if (!pm.environment.get('paymentIdempotencyKey')) pm.environment.set('paymentIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create payment request reaches GraphQL', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('payment is created', () => pm.expect(body.errors).to.be.undefined);",
+                  "pm.environment.set('paymentIntentId', body.data.createVietQrPaymentIntent.id);",
+                  "pm.environment.set('paymentIntentVersion', String(body.data.createVietQrPaymentIntent.version));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationName\": \"CreateVietQrPaymentIntent\",\n  \"query\": \"mutation CreateVietQrPaymentIntent($input: CreateVietQrPaymentIntentInput!) { createVietQrPaymentIntent(input: $input) { id intentCode status amount currency qrPayload qrImageDataUri expiresAt version } }\",\n  \"variables\": {\n    \"input\": {\n      \"financePaymentRequestId\": \"{{financePaymentRequestId}}\",\n      \"idempotencyKey\": \"{{paymentIdempotencyKey}}\"\n    }\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}",
+            "description": "Requires Payment GENERATE_ONLY or CALLBACK_ENABLED and a payable Finance request. The local stack defaults to DISABLED."
+          }
+        },
+        {
+          "name": "Cancel payment intent",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runPaymentMutations') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('accessToken') || !pm.environment.get('paymentIntentId')) throw new Error('accessToken and paymentIntentId are required');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('cancel payment request reaches GraphQL', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('payment is cancelled', () => {",
+                  "  pm.expect(body.errors).to.be.undefined;",
+                  "  pm.expect(body.data.cancelPaymentIntent.status).to.eql('CANCELLED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationName\": \"CancelPaymentIntent\",\n  \"query\": \"mutation CancelPaymentIntent($input: CancelPaymentIntentInput!) { cancelPaymentIntent(input: $input) { id status version } }\",\n  \"variables\": {\n    \"input\": {\n      \"paymentIntentId\": \"{{paymentIntentId}}\",\n      \"expectedVersion\": {{paymentIntentVersion}},\n      \"reason\": \"Cancelled by Postman verification\"\n    }\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "VietQR callbacks",
+      "item": [
+        {
+          "name": "Issue callback token",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runVietQrCallbacks') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('vietQrCallbackClientId') || !pm.environment.get('vietQrCallbackClientSecret')) throw new Error('VietQR callback credentials are required');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('callback token is issued', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.token_type).to.eql('Bearer');",
+                  "pm.environment.set('vietQrCallbackAccessToken', body.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{vietQrCallbackClientId}}", "type": "string" },
+                { "key": "password", "value": "{{vietQrCallbackClientSecret}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{paymentWebhookBase}}/webhooks/vietqr/token",
+            "description": "Requires PAYMENT_ACTIVATION_MODE=CALLBACK_ENABLED. The local stack defaults to DISABLED and intentionally returns 404."
+          }
+        },
+        {
+          "name": "Submit callback transaction",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runVietQrCallbacks') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('vietQrCallbackAccessToken')) throw new Error('Run Issue callback token first');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('transaction callback is accepted', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.accepted).to.eql(true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{vietQrCallbackAccessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"referenceNumber\": \"{{$guid}}\",\n  \"transactionId\": \"POSTMAN-{{$timestamp}}\",\n  \"orderId\": \"{{vietQrOrderId}}\",\n  \"amount\": {{vietQrAmount}},\n  \"transactionType\": \"CREDIT\",\n  \"content\": \"Postman VietQR callback verification\",\n  \"transactionTime\": \"{{$isoTimestamp}}\"\n}"
+            },
+            "url": "{{paymentWebhookBase}}/webhooks/vietqr/transactions"
+          }
+        }
+      ]
+    }
+  ]
+}
