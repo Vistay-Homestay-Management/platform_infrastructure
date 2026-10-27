@@ -9,13 +9,19 @@ generated certificates, database dumps, or production endpoints.
 
 ## Epic 01 local stack
 
-Generate role-scoped development certificates, then start only the services
-required by Epic 01:
+Create the local environment file once, generate role-scoped development
+certificates, then start the complete stack:
 
 ```powershell
+Copy-Item .env.example .env
 ./scripts/Generate-DevCertificates.ps1
-docker compose -f compose.yaml -f compose.full.yaml --env-file .env --profile epic01 up --build
+docker compose -f compose.yaml -f compose.full.yaml --env-file .env --profile full up -d --build
 ```
+
+PostgreSQL is published on `127.0.0.1:55432` by default to avoid colliding
+with a workstation installation. Use `--profile epic01` instead of `full` when
+only the Epic 01 services are needed. Running plain `docker compose up` is not
+equivalent because application services live in `compose.full.yaml` profiles.
 
 The profile contains PostgreSQL, Redis, Kafka, Keycloak, Authentication, User,
 Notification, Finance, Payment, the Admin frontend, Hive Router, and Nginx. `full` additionally
