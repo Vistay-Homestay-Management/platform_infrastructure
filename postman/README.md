@@ -18,7 +18,6 @@ Postman PKCE client without recreating the realm:
 
 The same script can refresh the already initialized browser client after realm
 configuration changes by adding `-ClientId vistay-backoffice-web`.
-
 ## Safe defaults
 
 The `Safe smoke` folder is read-only and can run against the default Epic 01
@@ -72,7 +71,6 @@ After the CTV grant is approved, seed deterministic Booking rows:
 The fixture script refuses any PostgreSQL container other than the local
 `vistay-postgres-1`. It creates OWN, ASSIGNED and unrelated bookings only for
 scope verification. No token or password is stored in the repository.
-
 ## Payment activation
 
 The checked-in local configuration defaults to `PAYMENT_ACTIVATION_MODE=DISABLED`.
