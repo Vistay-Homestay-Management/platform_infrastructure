@@ -42,6 +42,13 @@ Run the static gates with:
 ./scripts/Compose-Supergraph.ps1
 ```
 
+## Postman verification
+
+Import the collection and local environment from [`postman/`](postman/README.md).
+The default run executes only read-only health, readiness, OIDC discovery, and
+unauthenticated security checks. Account bootstrap, notification streaming,
+payment mutations, and VietQR callbacks require explicit opt-in flags.
+
 ## Federation contracts
 
 `router/backoffice/subgraphs` vendors the reviewed User, Notification, and Payment SDLs
