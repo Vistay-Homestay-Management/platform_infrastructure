@@ -1,0 +1,136 @@
+log_format vistay escape=json '{"time":"$time_iso8601","remote_addr":"$remote_addr",'
+    '"request":"$request","status":$status,"bytes":$body_bytes_sent,'
+    '"request_time":$request_time,"upstream_time":"$upstream_response_time",'
+    '"request_id":"$request_id"}';
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      '';
+}
+
+# Docker services that are outside the selected Compose profile may be absent at
+# Nginx startup. Resolve upstreams at request time so the edge can still expose
+# health and the routes for services that are currently enabled.
+resolver 127.0.0.11 ipv6=off valid=30s;
+
+server {
+    listen 8080 default_server;
+    server_name _;
+    access_log /dev/stdout vistay;
+    location = /healthz { access_log off; return 200 'ok'; add_header Content-Type text/plain; }
+    location / { return 404; }
+}
+
+server {
+    listen 8080;
+    server_name ${BACKOFFICE_GRAPHQL_HOST};
+    access_log /dev/stdout vistay;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    server_tokens off;
+
+    location = /_edge/ready {
+        set $router_upstream http://router-backoffice:4000;
+        proxy_pass $router_upstream/readiness;
+        include /etc/nginx/proxy_params;
+    }
+    location ~ ^/graphql(?:/|$) {
+        set $router_upstream http://router-backoffice:4000;
+        proxy_pass $router_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+    }
+    location / { return 404; }
+}
+
+server {
+    listen 8080;
+    server_name ${KEYCLOAK_HOST};
+    access_log /dev/stdout vistay;
+    server_tokens off;
+    location ~ ^/(realms/vistay-backoffice/|resources/) {
+        set $keycloak_upstream http://keycloak:8080;
+        proxy_pass $keycloak_upstream;
+        include /etc/nginx/proxy_params;
+    }
+    location / { return 404; }
+}
+
+server {
+    listen 8080;
+    server_name ${BACKOFFICE_WEB_HOST};
+    access_log /dev/stdout vistay;
+    server_tokens off;
+    location / {
+        set $frontend_admin_upstream http://frontend-admin:8080;
+        proxy_pass $frontend_admin_upstream;
+        include /etc/nginx/proxy_params;
+    }
+}
+
+server {
+    listen 8080;
+    server_name ${BACKOFFICE_AUTH_HOST};
+    access_log /dev/stdout vistay;
+    server_tokens off;
+    location = /_edge/ready {
+        set $authentication_upstream http://authentication:8080;
+        proxy_pass $authentication_upstream/actuator/health/readiness;
+        include /etc/nginx/proxy_params;
+    }
+    location = /api/v1/backoffice/accounts/bootstrap {
+        set $authentication_upstream http://authentication:8080;
+        proxy_pass $authentication_upstream;
+        include /etc/nginx/proxy_params;
+    }
+    location / { return 404; }
+}
+
+server {
+    listen 8080;
+    server_name ${OBJECT_STORAGE_HOST};
+    access_log /dev/stdout vistay;
+    server_tokens off;
+    location / {
+        set $minio_upstream http://minio:9000;
+        proxy_pass $minio_upstream;
+        include /etc/nginx/proxy_params;
+        proxy_request_buffering off;
+    }
+}
+
+server {
+    listen 8080;
+    server_name ${CHANNEL_MANAGER_WEBHOOK_HOST};
+    access_log /dev/stdout vistay;
+    server_tokens off;
+    location ^~ /webhooks/channel-manager {
+        set $ota_upstream http://ota:8080;
+        proxy_pass $ota_upstream;
+        include /etc/nginx/proxy_params;
+    }
+    location / { return 404; }
+}
+
+server {
+    listen 8080;
+    server_name ${PAYMENT_WEBHOOK_HOST};
+    access_log /dev/stdout vistay;
+    server_tokens off;
+    client_max_body_size 256k;
+    location ^~ /webhooks/vietqr/ {
+        set $payment_upstream http://payment:8080;
+        proxy_pass $payment_upstream;
+        include /etc/nginx/proxy_params;
+        proxy_request_buffering off;
+    }
+    location / { return 404; }
+}

@@ -11,22 +11,124 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Validate Compose
         run: |
           docker compose --env-file .env.example --profile dependencies config --quiet
+          docker compose --env-file .env.example --profile identity config --quiet
+          docker compose --env-file .env.example --profile edge config --quiet
+          docker compose -f compose.yaml -f compose.full.yaml --env-file .env.example --profile epic01 config --quiet
           docker compose -f compose.yaml -f compose.full.yaml --env-file .env.example --profile full config --quiet
-      - uses: actions/setup-node@v4
+      - name: Enforce edge topology and immutable images
+        shell: pwsh
+        run: |
+          ./scripts/Test-EdgeTopology.ps1 -EnvFile .env.example
+          ./scripts/Test-EdgeTopology.ps1 -EnvFile .env.example -IncludeEpic01
+          ./scripts/Test-EdgeTopology.ps1 -EnvFile .env.example -IncludeFullStack
+      - name: Validate realm activation and token contract
+        shell: pwsh
+        run: ./scripts/Test-KeycloakContract.ps1 -EnvFile .env.example
+      - name: Generate role-scoped development certificate bundles
+        shell: pwsh
+        run: |
+          ./scripts/Generate-DevCertificates.ps1 -StorePassword 'ci-only-kafka-store-password'
+          $expected = @{
+            'certs/generated/kafka/broker' = @('broker.properties', 'kafka.keystore.jks', 'kafka.truststore.jks')
+            'certs/generated/kafka/admin' = @('admin.keystore.jks', 'admin.properties', 'kafka.truststore.jks')
+            'certs/generated/kafka/client' = @('kafka.truststore.jks')
+            'certs/generated/grpc/user-server' = @('ca.crt', 'server.crt', 'server.key')
+            'certs/generated/grpc/authentication-client' = @('authentication.crt', 'authentication.key', 'ca.crt')
+          }
+          foreach ($entry in $expected.GetEnumerator()) {
+            $actual = @(Get-ChildItem -LiteralPath $entry.Key -File | Select-Object -ExpandProperty Name | Sort-Object)
+            $wanted = @($entry.Value | Sort-Object)
+            if (($actual -join ',') -ne ($wanted -join ',')) {
+              throw "Unexpected certificate bundle '$($entry.Key)': $($actual -join ',')"
+            }
+          }
+          if (Get-ChildItem certs/generated -Recurse -File | Where-Object Name -in @('ca.key', 'ca.p12')) {
+            throw 'CA private material must not survive generation.'
+          }
+      - name: Validate Nginx configuration
+        run: |
+          NGINX_IMAGE="$(sed -n 's/^NGINX_IMAGE=//p' .env.example)"
+          docker run --rm \
+            --env BACKOFFICE_GRAPHQL_HOST=graphql.localhost \
+            --env KEYCLOAK_HOST=identity.localhost \
+            --env BACKOFFICE_WEB_HOST=admin.localhost \
+            --env BACKOFFICE_AUTH_HOST=auth.localhost \
+            --env OBJECT_STORAGE_HOST=objects.localhost \
+            --env CHANNEL_MANAGER_WEBHOOK_HOST=channels.localhost \
+            --env PAYMENT_WEBHOOK_HOST=payments.localhost \
+            --env 'NGINX_ENVSUBST_FILTER=^(BACKOFFICE_GRAPHQL_HOST|KEYCLOAK_HOST|BACKOFFICE_WEB_HOST|BACKOFFICE_AUTH_HOST|OBJECT_STORAGE_HOST|CHANNEL_MANAGER_WEBHOOK_HOST|PAYMENT_WEBHOOK_HOST)$' \
+            --add-host router-backoffice:127.0.0.1 \
+            --add-host keycloak:127.0.0.1 \
+            --add-host frontend-admin:127.0.0.1 \
+            --add-host authentication:127.0.0.1 \
+            --add-host minio:127.0.0.1 \
+            --add-host ota:127.0.0.1 \
+            --add-host payment:127.0.0.1 \
+            --volume "$PWD/nginx/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            --volume "$PWD/nginx/proxy_params:/etc/nginx/proxy_params:ro" \
+            "$NGINX_IMAGE" nginx -t
+      - name: Test current and rollback Hive Router images
+        shell: pwsh
+        run: ./scripts/Test-HiveRouterCompatibility.ps1 -EnvFile .env.example
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Checkout subgraph schemas
-        run: |
-          for repo in service_user service_property service_booking service_finance service_operations service_ota service_notification service_media service_data_warehouse; do
-            git clone --depth 1 "https://github.com/Vistay-Homestay-Management/${repo}.git" "../${repo}"
-          done
       - name: Validate committed supergraph
         shell: pwsh
         run: |
           ./scripts/Compose-Supergraph.ps1
-          git diff --exit-code -- supergraph.graphql
+          git diff --exit-code -- router/backoffice/supergraph.graphql
+
+  edge-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EDGE_HTTP_PORT: '18080'
+      POSTGRES_PORT: '15432'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start isolated Backoffice edge
+        run: docker compose --project-name vistay-edge-ci --env-file .env.example --profile edge up --detach --wait
+      - name: Verify ingress, realms, and anonymous rejection
+        run: |
+          curl --fail --silent --show-error --head \
+            --header 'Host: graphql.localhost' \
+            http://127.0.0.1:18080/_edge/ready
+
+          status="$(curl --silent --show-error --output /tmp/vistay-anonymous-response.json --write-out '%{http_code}' \
+            --header 'Host: graphql.localhost' \
+            --header 'X-CSRF-Token: edge-smoke' \
+            'http://127.0.0.1:18080/graphql?query=%7Bviewer%7BaccountId%7D%7D')"
+          test "$status" = '401'
+
+          curl --fail --silent --show-error --head \
+            --header 'Host: identity.localhost' \
+            'http://127.0.0.1:18080/realms/vistay-backoffice/.well-known/openid-configuration'
+
+          for realm in vistay-host vistay-customer; do
+            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              --header 'Host: identity.localhost' \
+              "http://127.0.0.1:18080/realms/${realm}/.well-known/openid-configuration")"
+            test "$status" = '404'
+          done
+
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header 'Host: identity.localhost' \
+            'http://127.0.0.1:18080/admin/')"
+          test "$status" = '404'
+      - name: Print edge logs on failure
+        if: failure()
+        run: docker compose --project-name vistay-edge-ci --env-file .env.example --profile edge logs --no-color
+      - name: Remove isolated edge resources
+        if: always()
+        run: docker compose --project-name vistay-edge-ci --env-file .env.example --profile edge down --volumes --remove-orphans
