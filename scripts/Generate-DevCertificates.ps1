@@ -22,6 +22,7 @@ $kafkaAdminOutput = Join-Path $generatedRoot 'kafka\admin'
 $kafkaClientOutput = Join-Path $generatedRoot 'kafka\client'
 $grpcServerOutput = Join-Path $generatedRoot 'grpc\user-server'
 $grpcClientOutput = Join-Path $generatedRoot 'grpc\authentication-client'
+$grpcBookingClientOutput = Join-Path $generatedRoot 'grpc\booking-client'
 $workDirectory = Join-Path $generatedRoot '.work'
 
 foreach ($directory in @(
@@ -30,6 +31,7 @@ foreach ($directory in @(
     $kafkaClientOutput,
     $grpcServerOutput,
     $grpcClientOutput,
+    $grpcBookingClientOutput,
     $workDirectory
 )) {
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
@@ -154,6 +156,10 @@ ssl.endpoint.identification.algorithm=https
     $grpcAuthenticationRequest = Join-Path $workDirectory 'authentication.csr'
     $grpcAuthenticationCertificate = Join-Path $grpcClientOutput 'authentication.crt'
     $grpcAuthenticationExtensions = Join-Path $workDirectory 'authentication.ext'
+    $grpcBookingKey = Join-Path $grpcBookingClientOutput 'booking.key'
+    $grpcBookingRequest = Join-Path $workDirectory 'booking.csr'
+    $grpcBookingCertificate = Join-Path $grpcBookingClientOutput 'booking.crt'
+    $grpcBookingExtensions = Join-Path $workDirectory 'booking.ext'
 
     @'
 basicConstraints=critical,CA:FALSE
@@ -168,6 +174,13 @@ keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=clientAuth
 subjectAltName=URI:spiffe://vistay/service/authentication
 '@ | Set-Content -LiteralPath $grpcAuthenticationExtensions -NoNewline
+
+    @'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth
+subjectAltName=URI:spiffe://vistay/service/booking
+'@ | Set-Content -LiteralPath $grpcBookingExtensions -NoNewline
 
     Invoke-OpenSsl @(
         'req', '-x509', '-newkey', 'rsa:4096', '-sha256', '-nodes',
@@ -195,8 +208,19 @@ subjectAltName=URI:spiffe://vistay/service/authentication
         '-out', $grpcAuthenticationCertificate, '-days', '825',
         '-extfile', $grpcAuthenticationExtensions
     )
+    Invoke-OpenSsl @(
+        'req', '-new', '-newkey', 'rsa:3072', '-sha256', '-nodes',
+        '-keyout', $grpcBookingKey, '-out', $grpcBookingRequest,
+        '-subj', '/C=VN/L=Ho Chi Minh City/O=ViStay/OU=Platform/CN=service-booking'
+    )
+    Invoke-OpenSsl @(
+        'x509', '-req', '-sha256', '-in', $grpcBookingRequest,
+        '-CA', $grpcCaCertificate, '-CAkey', $grpcCaKey, '-CAserial', $grpcCaSerial,
+        '-out', $grpcBookingCertificate, '-days', '825',
+        '-extfile', $grpcBookingExtensions
+    )
 
-    foreach ($destination in @($grpcServerOutput, $grpcClientOutput)) {
+    foreach ($destination in @($grpcServerOutput, $grpcClientOutput, $grpcBookingClientOutput)) {
         Copy-Item -LiteralPath $grpcCaCertificate -Destination (Join-Path $destination 'ca.crt')
     }
 
@@ -207,7 +231,10 @@ subjectAltName=URI:spiffe://vistay/service/authentication
             $grpcServerKey `
             (Join-Path $grpcClientOutput 'ca.crt') `
             $grpcAuthenticationCertificate `
-            $grpcAuthenticationKey
+            $grpcAuthenticationKey `
+            (Join-Path $grpcBookingClientOutput 'ca.crt') `
+            $grpcBookingCertificate `
+            $grpcBookingKey
         if ($LASTEXITCODE -ne 0) {
             throw "chmod failed with exit code $LASTEXITCODE"
         }

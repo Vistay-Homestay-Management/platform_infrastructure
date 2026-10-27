@@ -44,6 +44,11 @@ services:
       KEYCLOAK_ADMIN_CLIENT_ID: vistay-auth-facade
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
       VISTAY_BOOTSTRAP_TOKEN: ${VISTAY_BOOTSTRAP_TOKEN}
+      USER_GRPC_ADDRESS: static://user:9090
+      USER_GRPC_SSL_BUNDLE: grpc-user-client
+      GRPC_CLIENT_CERT: file:/run/secrets/grpc/authentication.crt
+      GRPC_CLIENT_KEY: file:/run/secrets/grpc/authentication.key
+      GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt
     expose: ["8080"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
@@ -66,19 +71,24 @@ services:
       SPRING_FLYWAY_USER: vistay_user_migrator
       SPRING_FLYWAY_PASSWORD: ${USER_DB_MIGRATOR_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-user" password="${KAFKA_USER_PASSWORD}";
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       GRPC_SERVER_PORT: 9090
       GRPC_TLS_ENABLED: "true"
       GRPC_SSL_BUNDLE: grpc-server
       GRPC_SERVER_CERT: file:/run/secrets/grpc/server.crt
       GRPC_SERVER_KEY: file:/run/secrets/grpc/server.key
       GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/ca.crt
-      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/authentication
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/authentication,spiffe://vistay/service/booking
       GRPC_MAXIMUM_DEADLINE: 2s
     expose: ["8080", "9090"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
       - ./certs/generated/grpc/user-server:/run/secrets/grpc:ro
-    depends_on: *service-dependencies
+    depends_on:
+      <<: *service-dependencies
+      redis:
+        condition: service_healthy
     networks: [vistay]
 
   notification:
@@ -125,10 +135,19 @@ services:
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-booking" password="${KAFKA_BOOKING_PASSWORD}";
+      USER_GRPC_ADDRESS: static://user:9090
+      USER_GRPC_SSL_BUNDLE: grpc-user-client
+      GRPC_CLIENT_CERT: file:/run/secrets/grpc/booking.crt
+      GRPC_CLIENT_KEY: file:/run/secrets/grpc/booking.key
+      GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt
     expose: ["8080"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
-    depends_on: *service-dependencies
+      - ./certs/generated/grpc/booking-client:/run/secrets/grpc:ro
+    depends_on:
+      <<: *service-dependencies
+      user:
+        condition: service_started
     networks: [vistay]
 
   finance:
