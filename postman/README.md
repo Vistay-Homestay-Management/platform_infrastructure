@@ -31,6 +31,7 @@ Enable an optional group only after supplying its required variables:
 | `runBootstrap=true` | Backoffice account bootstrap | `bootstrapToken`, `bootstrapPassword` |
 | `runSessionRevoke=true` | Revoke the `sessionId` selected by the preceding list request | `accessToken`, `accountId`, `sessionRevocationReason` |
 | `runProfileUpdate=true` | Update the signed-in admin's personal profile | Run Viewer first; set profile fields and use a token with `profile:update@SELF` |
+| `runAccountLifecycle=true` | Lock, disable, or recover a Backoffice account | Target UUID/version and token with `account:suspend@ALL` or `account:unlock@ALL` |
 | `runNotificationStream=true` | GraphQL-over-SSE notification stream | `accessToken` with `notifications:read` |
 | `runPaymentMutations=true` | Create/cancel payment intent | `accessToken`, payable `financePaymentRequestId`, Payment not `DISABLED` |
 | `runVietQrCallbacks=true` | VietQR token and transaction callbacks | Callback credentials and `CALLBACK_ENABLED` mode |
@@ -79,6 +80,17 @@ uses optimistic concurrency and an idempotency key. Clear
 `profileIdempotencyKey` before submitting different values; keep it unchanged
 only when verifying that the same request is replayed safely. Avatar data is an
 external media UUID reference, not a binary upload.
+
+## Account security lifecycle
+
+Run **Inspect account security** with `securityTargetAccountId` to review the
+projection version and Keycloak brute-force state, then review **List account
+security events**. Mutations are skipped until `runAccountLifecycle=true`.
+Choose `LOCK`, `DISABLE`, or `RECOVER`, copy the current version to
+`securityTargetVersion`, and provide an eight-character reason. Clear the
+idempotency key before changing inputs; a successful lock/disable also revokes
+active Keycloak sessions, while recovery clears login failures before enabling
+the account.
 
 ## Authorization E2E order
 

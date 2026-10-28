@@ -282,6 +282,35 @@
       ]
     },
     {
+      "name": "Account security lifecycle",
+      "item": [
+        {
+          "name": "Inspect account security",
+          "event": [{ "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (!pm.environment.get('accessToken') || !pm.environment.get('securityTargetAccountId')) pm.execution.skipRequest();"] } }],
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-CSRF-Token", "value": "1" }], "url": "{{authBase}}/api/v1/backoffice/accounts/{{securityTargetAccountId}}" }
+        },
+        {
+          "name": "List account security events",
+          "event": [{ "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (!pm.environment.get('accessToken') || !pm.environment.get('securityTargetAccountId')) pm.execution.skipRequest();"] } }],
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "X-CSRF-Token", "value": "1" }], "url": "{{authBase}}/api/v1/backoffice/accounts/{{securityTargetAccountId}}/security-events" }
+        },
+        {
+          "name": "Change account lifecycle",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runAccountLifecycle') !== 'true') pm.execution.skipRequest();", "if (!pm.environment.get('lifecycleIdempotencyKey')) pm.environment.set('lifecycleIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));" ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('lifecycle request succeeds', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.environment.set('securityTargetVersion', String(body.version));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "1" }, { "key": "Idempotency-Key", "value": "{{lifecycleIdempotencyKey}}" }, { "key": "X-Correlation-Id", "value": "{{lifecycleIdempotencyKey}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"action\": \"{{lifecycleAction}}\",\n  \"expectedVersion\": {{securityTargetVersion}},\n  \"reason\": \"{{lifecycleReason}}\"\n}" },
+            "url": "{{authBase}}/api/v1/backoffice/accounts/{{securityTargetAccountId}}/lifecycle",
+            "description": "Opt in with runAccountLifecycle=true. Use LOCK, DISABLE or RECOVER. Clear lifecycleIdempotencyKey before changing action/input."
+          }
+        }
+      ]
+    },
+    {
       "name": "Authenticated GraphQL",
       "item": [
         {
