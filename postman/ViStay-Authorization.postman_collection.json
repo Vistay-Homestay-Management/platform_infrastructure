@@ -82,7 +82,7 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Idempotency-Key", "value": "{{checkerProvisionKey}}" }
             ],
-            "body": { "mode": "raw", "raw": "{\"email\":\"{{checkerEmail}}\",\"fullName\":\"{{checkerFullName}}\",\"temporaryPassword\":\"{{checkerTemporaryPassword}}\"}" },
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{checkerEmail}}\",\"fullName\":\"{{checkerFullName}}\",\"temporaryPassword\":\"{{checkerTemporaryPassword}}\",\"reason\":\"Establish independent checker for authorization workflow\"}" },
             "url": "{{authBase}}/api/v1/backoffice/accounts"
           }
         },
@@ -144,7 +144,7 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Idempotency-Key", "value": "{{targetProvisionKey}}" }
             ],
-            "body": { "mode": "raw", "raw": "{\"email\":\"{{targetEmail}}\",\"fullName\":\"{{targetFullName}}\",\"temporaryPassword\":\"{{targetTemporaryPassword}}\"}" },
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{targetEmail}}\",\"fullName\":\"{{targetFullName}}\",\"temporaryPassword\":\"{{targetTemporaryPassword}}\",\"reason\":\"Provision scoped target for authorization verification\"}" },
             "url": "{{authBase}}/api/v1/backoffice/accounts"
           }
         },

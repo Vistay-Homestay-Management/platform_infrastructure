@@ -192,7 +192,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{bootstrapEmail}}\",\n  \"fullName\": \"{{bootstrapFullName}}\",\n  \"temporaryPassword\": \"{{bootstrapPassword}}\"\n}"
+              "raw": "{\n  \"email\": \"{{bootstrapEmail}}\",\n  \"fullName\": \"{{bootstrapFullName}}\",\n  \"temporaryPassword\": \"{{bootstrapPassword}}\",\n  \"reason\": \"Initial controlled Backoffice bootstrap\"\n}"
             },
             "url": "{{authBase}}/api/v1/backoffice/accounts/bootstrap",
             "description": "Opt in with runBootstrap=true. Reusing the same Idempotency-Key with the same body returns the original account."
