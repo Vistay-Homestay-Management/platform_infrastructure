@@ -46,7 +46,14 @@ Run the static gates with:
 ./scripts/Test-EdgeTopology.ps1 -IncludeEpic01
 ./scripts/Test-KeycloakContract.ps1
 ./scripts/Compose-Supergraph.ps1
+./scripts/Test-Observability.ps1
 ```
+
+The Epic 01 walking slice exports W3C-correlated traces from Authentication,
+User, and Notification to the local OpenTelemetry Collector. Prometheus-format
+metrics remain internal at each service's `/actuator/prometheus` endpoint. See
+[`observability/README.md`](observability/README.md) for verification, incident,
+and rollback procedures.
 
 ## Postman verification
 

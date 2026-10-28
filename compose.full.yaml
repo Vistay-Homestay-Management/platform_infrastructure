@@ -13,6 +13,9 @@ x-service-environment: &service-environment
   KAFKA_SASL_MECHANISM: SCRAM-SHA-512
   KAFKA_TRUSTSTORE_LOCATION: /run/secrets/kafka/kafka.truststore.jks
   KAFKA_TRUSTSTORE_PASSWORD: ${KAFKA_STORE_PASSWORD}
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: ${OTEL_SAMPLING_PROBABILITY:-1.0}
+  MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
 
 x-service-dependencies: &service-dependencies
   postgres:
@@ -23,6 +26,8 @@ x-service-dependencies: &service-dependencies
     condition: service_completed_successfully
   keycloak:
     condition: service_healthy
+  otel-collector:
+    condition: service_healthy
 
 services:
   authentication:
@@ -31,6 +36,7 @@ services:
     profiles: ["epic01", "full"]
     environment:
       <<: *service-environment
+      OTEL_SERVICE_NAME: vistay-authentication-service
       DB_NAME: vistay_authentication_db
       DB_USERNAME: vistay_authentication_app
       DB_PASSWORD: ${AUTHENTICATION_DB_APP_PASSWORD}
@@ -65,6 +71,7 @@ services:
     profiles: ["epic01", "full"]
     environment:
       <<: *service-environment
+      OTEL_SERVICE_NAME: vistay-user-service
       DB_NAME: vistay_user_db
       DB_USERNAME: vistay_user_app
       DB_PASSWORD: ${USER_DB_APP_PASSWORD}
@@ -97,6 +104,7 @@ services:
     profiles: ["epic01", "full"]
     environment:
       <<: *service-environment
+      OTEL_SERVICE_NAME: vistay-notification-service
       DB_NAME: vistay_notification_db
       DB_USERNAME: vistay_notification_app
       DB_PASSWORD: ${NOTIFICATION_DB_APP_PASSWORD}

@@ -147,6 +147,31 @@ services:
       retries: 20
     networks: [vistay]
 
+  otel-collector:
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.163.2@sha256:63e5e8eccf4268be02388ba9f2dc36b80b5e47721291293411c0e83152d75bda}
+    profiles: ["dependencies", "epic01", "full"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "${OTEL_HEALTH_BIND_ADDRESS:-127.0.0.1}:${OTEL_HEALTH_PORT:-13133}:13133"
+    expose:
+      - "4317"
+      - "4318"
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "/otelcol", "validate", "--config=/etc/otelcol/config.yaml"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks: [vistay]
+
   keycloak:
     image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244}
     profiles: ["identity", "edge", "epic01", "full"]

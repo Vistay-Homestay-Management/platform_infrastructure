@@ -190,6 +190,13 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         throw 'Epic 01 services must not share Kafka SCRAM credentials.'
     }
 
+    $kafkaInitializer = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'kafka/init.sh')
+    if (-not $kafkaInitializer.Contains(
+        'grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-authorization-cache'
+    )) {
+        throw 'Kafka ACLs must cover the Authentication authorization-cache consumer group exactly.'
+    }
+
     $user = $configuration.services.user
     foreach ($expected in @(
         @{ Name = 'GRPC_TLS_ENABLED'; Value = 'true' },

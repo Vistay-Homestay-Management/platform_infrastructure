@@ -34,6 +34,9 @@ jobs:
       - name: Validate realm activation and token contract
         shell: pwsh
         run: ./scripts/Test-KeycloakContract.ps1 -EnvFile .env.example
+      - name: Validate observability contract
+        shell: pwsh
+        run: ./scripts/Test-Observability.ps1 -EnvFile .env.example -StaticOnly
       - name: Generate role-scoped development certificate bundles
         shell: pwsh
         run: |
