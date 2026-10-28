@@ -29,6 +29,7 @@ Enable an optional group only after supplying its required variables:
 | Flag | Enables | Prerequisites |
 | --- | --- | --- |
 | `runBootstrap=true` | Backoffice account bootstrap | `bootstrapToken`, `bootstrapPassword` |
+| `runSessionRevoke=true` | Revoke the `sessionId` selected by the preceding list request | `accessToken`, `accountId`, `sessionRevocationReason` |
 | `runNotificationStream=true` | GraphQL-over-SSE notification stream | `accessToken` with `notifications:read` |
 | `runPaymentMutations=true` | Create/cancel payment intent | `accessToken`, payable `financePaymentRequestId`, Payment not `DISABLED` |
 | `runVietQrCallbacks=true` | VietQR token and transaction callbacks | Callback credentials and `CALLBACK_ENABLED` mode |
@@ -53,6 +54,19 @@ for the checker and scoped target accounts using `checkerAccessToken` and
 `targetAccessToken`. The temporary password must be changed on first login.
 The authenticated GraphQL requests send both `Authorization: Bearer ...` and
 the required `X-CSRF-Token` header.
+
+## Session and recovery flow
+
+Set `accountId` to the `accountId` returned by Viewer and copy the OAuth token
+to `accessToken`. Run **List active Backoffice sessions** first; it stores the
+first result as `sessionId`. Revocation is intentionally skipped until
+`runSessionRevoke=true`. Reusing the same idempotency key returns the original
+audit result without a second Keycloak mutation.
+
+Credential recovery is exposed by the Keycloak login page through **Forgot
+password**. Delivery of the reset link requires SMTP to be configured for the
+Backoffice realm in each deployed environment; Postman never stores or submits
+an administrator password.
 
 ## Authorization E2E order
 

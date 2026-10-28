@@ -99,6 +99,11 @@ $realmPath = Join-Path $repositoryRoot $RealmFile
 $realm = Get-Content -Raw -LiteralPath $realmPath | ConvertFrom-Json
 Assert-Contract ($realm.realm -eq 'vistay-backoffice') 'The realm contract test must target vistay-backoffice.'
 Assert-Contract ($realm.enabled -eq $true) 'The Backoffice realm must be active for Epic 01.'
+Assert-Contract ($realm.resetPasswordAllowed -eq $true) 'Backoffice login must expose Keycloak credential recovery.'
+Assert-Contract ($realm.revokeRefreshToken -eq $true) 'Backoffice refresh tokens must rotate after use.'
+Assert-Contract ($realm.refreshTokenMaxReuse -eq 0) 'A rotated Backoffice refresh token must not be reusable.'
+Assert-Contract ($realm.ssoSessionIdleTimeout -eq 1800) 'Backoffice sessions must expire after 30 idle minutes.'
+Assert-Contract ($realm.ssoSessionMaxLifespan -eq 28800) 'Backoffice sessions must not exceed an eight-hour shift.'
 
 foreach ($deferredRealmFile in @(
     'keycloak/realms/vistay-host-realm.json',

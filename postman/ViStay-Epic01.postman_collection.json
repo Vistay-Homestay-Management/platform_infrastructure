@@ -197,6 +197,87 @@
             "url": "{{authBase}}/api/v1/backoffice/accounts/bootstrap",
             "description": "Opt in with runBootstrap=true. Reusing the same Idempotency-Key with the same body returns the original account."
           }
+        },
+        {
+          "name": "List active Backoffice sessions",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('accessToken')) pm.execution.skipRequest();",
+                  "if (!pm.environment.get('accountId')) throw new Error('accountId is required');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('sessions are returned', () => pm.response.to.have.status(200));",
+                  "const sessions = pm.response.json();",
+                  "pm.test('response is a session array', () => pm.expect(sessions).to.be.an('array'));",
+                  "if (sessions.length) pm.environment.set('sessionId', sessions[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "url": "{{authBase}}/api/v1/backoffice/accounts/{{accountId}}/sessions",
+            "description": "Lists sessions owned by Keycloak. The current token session is marked with current=true."
+          }
+        },
+        {
+          "name": "Revoke selected Backoffice session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runSessionRevoke') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('accessToken')) throw new Error('accessToken is required');",
+                  "if (!pm.environment.get('accountId')) throw new Error('accountId is required');",
+                  "if (!pm.environment.get('sessionId')) throw new Error('Run List active Backoffice sessions first');",
+                  "pm.variables.set('sessionRevocationKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('session is revoked', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('audit result identifies the session', () => pm.expect(body.sessionId).to.eql(pm.environment.get('sessionId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "Idempotency-Key", "value": "{{sessionRevocationKey}}", "type": "text" },
+              { "key": "X-Correlation-Id", "value": "{{sessionRevocationKey}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"{{sessionRevocationReason}}\"\n}"
+            },
+            "url": "{{authBase}}/api/v1/backoffice/accounts/{{accountId}}/sessions/{{sessionId}}",
+            "description": "Destructive request is opt-in with runSessionRevoke=true. Reusing the same key safely replays the completed audit result."
+          }
         }
       ]
     },
