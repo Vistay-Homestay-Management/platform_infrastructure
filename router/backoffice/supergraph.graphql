@@ -121,6 +121,9 @@ type BackofficeViewer
   profileId: ID!
   displayName: String!
   email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  profileVersion: Int!
   roles: [String!]!
   permissions: [String!]!
   grants: [EffectiveGrant!]!
@@ -213,6 +216,7 @@ type Mutation
 {
   createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
   requestAuthorizationChange(input: RequestAuthorizationChangeInput!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
   approveAuthorizationChange(id: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
   rejectAuthorizationChange(id: ID!, reason: String!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
@@ -289,6 +293,20 @@ input PermissionScopeOverrideInput
   scopes: [DataScope!]!
 }
 
+type PersonalProfile
+  @join__type(graph: USER)
+{
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  version: Int!
+  updatedAt: String!
+  replayed: Boolean!
+}
+
 type Query
   @join__type(graph: BOOKING)
   @join__type(graph: NOTIFICATION)
@@ -299,6 +317,7 @@ type Query
   bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
   paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
+  myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
   authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @join__field(graph: USER) @authenticated
   authorizationSubject(subjectId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
   authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
@@ -345,4 +364,15 @@ type Subscription
   clients deduplicate by `notification.id` and persist each received cursor.
   """
   notificationStream(afterCursor: Cursor): NotificationStreamEvent! @authenticated @requiresScopes(scopes: [["notifications:read"]])
+}
+
+input UpdateMyProfileInput
+  @join__type(graph: USER)
+{
+  displayName: String!
+  contactPhone: String
+  avatarMediaId: ID
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
 }

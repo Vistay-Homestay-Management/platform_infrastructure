@@ -304,7 +304,13 @@
                   "pm.test('viewer request succeeds', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test('viewer has no GraphQL errors', () => pm.expect(body.errors).to.be.undefined);",
-                  "pm.test('viewer identity is present', () => pm.expect(body.data.viewer.accountId).to.be.a('string'));"
+                  "pm.test('viewer identity is present', () => pm.expect(body.data.viewer.accountId).to.be.a('string'));",
+                  "if (body.data?.viewer) {",
+                  "  pm.environment.set('profileVersion', String(body.data.viewer.profileVersion));",
+                  "  pm.environment.set('profileDisplayName', body.data.viewer.displayName);",
+                  "  pm.environment.set('profilePhone', body.data.viewer.contactPhone || '');",
+                  "  pm.environment.set('profileAvatarMediaId', body.data.viewer.avatarMediaId || '11111111-1111-4111-8111-111111111111');",
+                  "}"
                 ]
               }
             }
@@ -318,9 +324,52 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"operationName\": \"Viewer\",\n  \"query\": \"query Viewer { viewer { accountId profileId displayName email roles permissions authorizationVersion } }\"\n}"
+              "raw": "{\n  \"operationName\": \"Viewer\",\n  \"query\": \"query Viewer { viewer { accountId profileId displayName email contactPhone avatarMediaId profileVersion roles permissions authorizationVersion } }\"\n}"
             },
             "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Update my profile",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runProfileUpdate') !== 'true') pm.execution.skipRequest();",
+                  "if (!pm.environment.get('accessToken')) throw new Error('accessToken is required');",
+                  "if (!pm.environment.get('profileIdempotencyKey')) pm.environment.set('profileIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('profile update reaches GraphQL', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('profile update has no GraphQL errors', () => pm.expect(body.errors).to.be.undefined);",
+                  "pm.test('profile version increments', () => pm.expect(body.data.updateMyProfile.version).to.be.above(Number(pm.environment.get('profileVersion'))));",
+                  "pm.environment.set('profileVersion', String(body.data.updateMyProfile.version));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationName\": \"UpdateMyProfile\",\n  \"query\": \"mutation UpdateMyProfile($input: UpdateMyProfileInput!) { updateMyProfile(input: $input) { accountId profileId displayName email contactPhone avatarMediaId version updatedAt replayed } }\",\n  \"variables\": {\n    \"input\": {\n      \"displayName\": \"{{profileDisplayName}}\",\n      \"contactPhone\": \"{{profilePhone}}\",\n      \"avatarMediaId\": \"{{profileAvatarMediaId}}\",\n      \"expectedVersion\": {{profileVersion}},\n      \"reason\": \"{{profileUpdateReason}}\",\n      \"idempotencyKey\": \"{{profileIdempotencyKey}}\"\n    }\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}",
+            "description": "Opt in with runProfileUpdate=true. Run Viewer first to load the current profileVersion. Clear profileIdempotencyKey before a different update; reuse it only to verify replay behavior."
           }
         },
         {

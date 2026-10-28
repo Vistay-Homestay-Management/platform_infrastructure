@@ -3,6 +3,7 @@ extend schema
 
 type Query {
   viewer: BackofficeViewer! @authenticated
+  myProfile: PersonalProfile! @authenticated
   authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @authenticated
   authorizationSubject(subjectId: ID!): AuthorizationSubject! @authenticated
   authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @authenticated
@@ -11,6 +12,7 @@ type Query {
 }
 
 type Mutation {
+  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @authenticated
   requestAuthorizationChange(input: RequestAuthorizationChangeInput!): AuthorizationChangeRequest! @authenticated
   approveAuthorizationChange(id: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationChangeRequest! @authenticated
   rejectAuthorizationChange(id: ID!, reason: String!): AuthorizationChangeRequest! @authenticated
@@ -24,10 +26,34 @@ type BackofficeViewer {
   profileId: ID!
   displayName: String!
   email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  profileVersion: Int!
   roles: [String!]!
   permissions: [String!]!
   grants: [EffectiveGrant!]!
   authorizationVersion: Int!
+}
+
+type PersonalProfile {
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  version: Int!
+  updatedAt: String!
+  replayed: Boolean!
+}
+
+input UpdateMyProfileInput {
+  displayName: String!
+  contactPhone: String
+  avatarMediaId: ID
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
 }
 
 enum AccountType { CUSTOMER ADMIN HOST }

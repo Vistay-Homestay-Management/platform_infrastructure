@@ -30,6 +30,7 @@ Enable an optional group only after supplying its required variables:
 | --- | --- | --- |
 | `runBootstrap=true` | Backoffice account bootstrap | `bootstrapToken`, `bootstrapPassword` |
 | `runSessionRevoke=true` | Revoke the `sessionId` selected by the preceding list request | `accessToken`, `accountId`, `sessionRevocationReason` |
+| `runProfileUpdate=true` | Update the signed-in admin's personal profile | Run Viewer first; set profile fields and use a token with `profile:update@SELF` |
 | `runNotificationStream=true` | GraphQL-over-SSE notification stream | `accessToken` with `notifications:read` |
 | `runPaymentMutations=true` | Create/cancel payment intent | `accessToken`, payable `financePaymentRequestId`, Payment not `DISABLED` |
 | `runVietQrCallbacks=true` | VietQR token and transaction callbacks | Callback credentials and `CALLBACK_ENABLED` mode |
@@ -67,6 +68,17 @@ Credential recovery is exposed by the Keycloak login page through **Forgot
 password**. Delivery of the reset link requires SMTP to be configured for the
 Backoffice realm in each deployed environment; Postman never stores or submits
 an administrator password.
+
+## Personal profile flow
+
+Copy an OAuth token to `accessToken`, then run **Viewer** first. It stores the
+current `profileVersion` and profile fields in the environment. Review the
+`profileDisplayName`, E.164 `profilePhone`, `profileAvatarMediaId`, and reason;
+then enable `runProfileUpdate=true` and send **Update my profile**. The mutation
+uses optimistic concurrency and an idempotency key. Clear
+`profileIdempotencyKey` before submitting different values; keep it unchanged
+only when verifying that the same request is replayed safely. Avatar data is an
+external media UUID reference, not a binary upload.
 
 ## Authorization E2E order
 
