@@ -33,8 +33,28 @@ INSERT INTO bookings(
     '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
     'NIGHT', 2, 700000, 1400000, 0, 0, 0, 1400000, 'VND',
     '{}'::jsonb, '{}'::jsonb, 'ADMIN', :'maker_account_id'::uuid, NULL
+),
+(
+    '44444444-4444-4444-8444-444444444444', 'AUTHZ-EXPIRED-ASSIGNMENT',
+    'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'ADMIN_PORTAL', 'SHORT_TERM', 'CONFIRMED',
+    current_date + 18, current_date + 20, 'Expired assignment fixture', '0000000000', 'fixture@vistay.local',
+    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
+    'NIGHT', 2, 800000, 1600000, 0, 0, 0, 1600000, 'VND',
+    '{}'::jsonb, '{}'::jsonb, 'ADMIN', :'maker_account_id'::uuid, NULL
 )
 ON CONFLICT (id) DO UPDATE SET
     created_by_account_id = EXCLUDED.created_by_account_id,
     assigned_admin_user_id = EXCLUDED.assigned_admin_user_id,
     updated_at = now();
+
+DELETE FROM booking_attributions
+WHERE booking_id = '44444444-4444-4444-8444-444444444444'
+  AND admin_user_id = :'target_profile_id'::uuid
+  AND attribution_role = 'CTV';
+
+INSERT INTO booking_attributions(
+    booking_id, admin_user_id, attribution_role, valid_from, valid_until
+) VALUES (
+    '44444444-4444-4444-8444-444444444444', :'target_profile_id'::uuid,
+    'CTV', now() - interval '2 days', now() - interval '1 day'
+);

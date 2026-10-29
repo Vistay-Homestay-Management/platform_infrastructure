@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "jira": "SCRUM-525",
+  "cases": [
+    {
+      "id": "booking.direct-idor",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target is denied unrelated booking"
+    },
+    {
+      "id": "booking.list-filtering",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target list is filtered to active ASSIGNED records"
+    },
+    {
+      "id": "booking.field-leakage",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target reads ASSIGNED booking"
+    },
+    {
+      "id": "scope.union-own-assigned",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target list is filtered to active ASSIGNED records"
+    },
+    {
+      "id": "scope.all-dominance",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "SUPER_ADMIN ALL dominates list filtering and sensitive masking"
+    },
+    {
+      "id": "assignment.expired-record-relation",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target is denied booking with expired assignment"
+    },
+    {
+      "id": "authorization.immediate-reduction",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Reduced ASSIGNED scope is denied"
+    },
+    {
+      "id": "authorization.dependency-unavailable",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "User authorization dependency unavailable fails closed"
+    },
+    {
+      "id": "payment-intent.record-idor",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-526 / service_payment PaymentIntentControllerTest and PaymentIntentAuthorizationTest",
+      "reason": "Payment REST is internal-only and no safe deterministic Payment Intent Postman fixture exists yet."
+    },
+    {
+      "id": "scope.partition",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "service_payment PaymentIntentAuthorizationTest and BookingCharge authorization tests",
+      "reason": "The public Booking GraphQL schema has no partition-aware resource endpoint; Payment REST remains internal-only."
+    },
+    {
+      "id": "authorization.expired-role-grant",
+      "status": "BLOCKED_API",
+      "jiraDependency": "SCRUM-524",
+      "reason": "No safe public test-only API can create or expire a role assignment; direct User DB mutation is intentionally not exposed through Postman."
+    },
+    {
+      "id": "export.bulk-access",
+      "status": "BLOCKED_API",
+      "jiraDependency": "SCRUM-524",
+      "reason": "No migrated public export or bulk resource API currently exists."
+    }
+  ]
+}

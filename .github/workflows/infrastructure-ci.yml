@@ -31,6 +31,9 @@ jobs:
           ./scripts/Test-EdgeTopology.ps1 -EnvFile .env.example
           ./scripts/Test-EdgeTopology.ps1 -EnvFile .env.example -IncludeEpic01
           ./scripts/Test-EdgeTopology.ps1 -EnvFile .env.example -IncludeFullStack
+      - name: Validate Postman authorization matrix
+        shell: pwsh
+        run: ./scripts/Test-PostmanAuthorizationMatrix.ps1
       - name: Validate realm activation and token contract
         shell: pwsh
         run: ./scripts/Test-KeycloakContract.ps1 -EnvFile .env.example

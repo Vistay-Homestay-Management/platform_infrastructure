@@ -281,8 +281,8 @@
             "pm.test('wrong scope is explicit', () => pm.expect(pm.response.json().errors[0].extensions.code).to.eql('FORBIDDEN_SCOPE'));"
           ] } }]
         },
-        {
-          "name": "SUPER_ADMIN reads unrelated booking with ALL",
+          {
+            "name": "SUPER_ADMIN reads unrelated booking with ALL",
           "request": { "method": "POST", "header": [
             { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
             { "key": "Content-Type", "value": "application/json" },
@@ -291,9 +291,51 @@
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const payload = pm.response.json();",
             "pm.test('ALL scope allowed', () => pm.expect(payload.errors).to.be.undefined);",
-            "pm.test('sensitive ALL reveals commercial total', () => pm.expect(payload.data.booking.totalAmount).to.not.eql(null));"
-          ] } }]
-        }
+              "pm.test('sensitive ALL reveals commercial total', () => pm.expect(payload.data.booking.totalAmount).to.not.eql(null));"
+            ] } }]
+          },
+          {
+            "name": "Target list is filtered to active ASSIGNED records",
+            "request": { "method": "POST", "header": [
+              { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ], "body": { "mode": "raw", "raw": "{\"query\":\"query { bookings(limit: 100) { id bookingCode totalAmount } }\"}" }, "url": "{{graphqlUrl}}" },
+            "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const payload = pm.response.json();",
+              "const rows = payload.data.bookings;",
+              "const ids = rows.map(row => row.id);",
+              "pm.test('OWN plus ASSIGNED union includes the active assignment', () => pm.expect(ids).to.include(pm.environment.get('assignedBookingId')));",
+              "pm.test('creator provenance is excluded from list filtering', () => pm.expect(ids).to.not.include(pm.environment.get('ownBookingId')));",
+              "pm.test('unrelated and expired assignments are excluded', () => { pm.expect(ids).to.not.include(pm.environment.get('unrelatedBookingId')); pm.expect(ids).to.not.include(pm.environment.get('expiredAssignmentBookingId')); });",
+              "pm.test('list does not leak commercial fields', () => rows.forEach(row => pm.expect(row.totalAmount).to.eql(null)));"
+            ] } }]
+          },
+          {
+            "name": "Target is denied booking with expired assignment",
+            "request": { "method": "POST", "header": [
+              { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id } }\",\"variables\":{\"id\":\"{{expiredAssignmentBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+            "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('expired assignment is denied', () => pm.expect(pm.response.json().errors[0].extensions.code).to.eql('FORBIDDEN_SCOPE'));"
+            ] } }]
+          },
+          {
+            "name": "SUPER_ADMIN ALL dominates list filtering and sensitive masking",
+            "request": { "method": "POST", "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ], "body": { "mode": "raw", "raw": "{\"query\":\"query { bookings(limit: 100) { id totalAmount } }\"}" }, "url": "{{graphqlUrl}}" },
+            "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const rows = pm.response.json().data.bookings;",
+              "const byId = Object.fromEntries(rows.map(row => [row.id, row]));",
+              "pm.test('ALL includes every deterministic fixture', () => ['ownBookingId','assignedBookingId','unrelatedBookingId','expiredAssignmentBookingId'].forEach(key => pm.expect(byId).to.have.property(pm.environment.get(key))));",
+              "pm.test('sensitive ALL dominates field masking', () => ['ownBookingId','assignedBookingId','unrelatedBookingId','expiredAssignmentBookingId'].forEach(key => pm.expect(byId[pm.environment.get(key)].totalAmount).to.not.eql(null)));"
+            ] } }]
+          }
       ]
     },
     {
@@ -314,10 +356,22 @@
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const subject = pm.response.json().data.reduceAuthorizationScopes;",
             "pm.environment.set('targetAuthorizationVersion', String(subject.authorizationVersion));"
-          ] } }]
-        },
-        {
-          "name": "Revoke CTV assignment",
+            ] } }]
+          },
+          {
+            "name": "Reduced ASSIGNED scope is denied",
+            "description": "Run in Collection Runner/Newman. If Kafka invalidation is still propagating, rerun this request; the local cache TTL is bounded to 30 seconds.",
+            "request": { "method": "POST", "header": [
+              { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id } }\",\"variables\":{\"id\":\"{{assignedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+            "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "pm.test('scope reduction invalidates former ASSIGNED access', () => pm.expect(pm.response.json().errors[0].extensions.code).to.eql('FORBIDDEN_SCOPE'));"
+            ] } }]
+          },
+          {
+            "name": "Revoke CTV assignment",
           "request": {
             "method": "POST",
             "header": [
@@ -344,6 +398,29 @@
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('authorization audit has evidence', () => pm.expect(pm.response.json().data.authorizationAudit.length).to.be.above(2));"
           ] } }]
+        }
+      ]
+    },
+    {
+      "name": "06 Authorization dependency failure injection",
+      "item": [
+        {
+          "name": "User authorization dependency unavailable fails closed",
+          "description": "Set runAuthorizationUnavailable=true, stop only service-user after an authorization cache miss, then run this request. Restart service-user immediately after the assertion.",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "if (pm.environment.get('runAuthorizationUnavailable') !== 'true') pm.execution.skipRequest();"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const errors = pm.response.json().errors || [];",
+              "pm.test('authorization dependency failure is explicit and fail-closed', () => pm.expect(errors[0].extensions.code).to.eql('AUTHORIZATION_UNAVAILABLE'));"
+            ] } }
+          ],
+          "request": { "method": "POST", "header": [
+            { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-CSRF-Token", "value": "1" }
+          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id } }\",\"variables\":{\"id\":\"{{assignedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" }
         }
       ]
     }

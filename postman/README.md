@@ -36,6 +36,7 @@ Enable an optional group only after supplying its required variables:
 | `runPaymentMutations=true` | Create/cancel payment intent | `accessToken`, payable `financePaymentRequestId`, Payment not `DISABLED` |
 | `runVietQrCallbacks=true` | VietQR token and transaction callbacks | Callback credentials and `CALLBACK_ENABLED` mode |
 | `runAuthorizationE2E=true` | Maker-checker and Booking scope flow | Full profile, three PKCE tokens, local booking fixtures |
+| `runAuthorizationUnavailable=true` | Fail-closed User authorization dependency test | Run Authorization E2E first, force a cache miss, then temporarily stop only `service-user` |
 
 Never commit populated secret values or an exported environment containing
 tokens.
@@ -113,6 +114,19 @@ bookings for scope verification. Creator provenance is deliberately denied:
 also verifies that `totalAmount` is null unless `booking:read_sensitive` covers
 the same record. The legacy environment variable remains `ownBookingId` for
 collection compatibility. No token or password is stored in the repository.
+
+The checked-in `authorization-security-matrix.json` is the coverage ledger for
+`SCRUM-525`. CI verifies that every executable case maps to a real Postman
+request with assertions. It also records cases that currently have only
+service-level evidence or are blocked by a missing public resource API, so a
+green collection cannot silently imply coverage that does not exist.
+
+The Booking matrix now covers direct IDOR denial, list filtering, OWN+ASSIGNED
+union behavior, ALL dominance, commercial-field masking, expired record
+assignments, immediate scope reduction and authorization dependency failure.
+The last failure-injection request is disabled separately because it requires
+briefly stopping User Service; restart User Service immediately after running
+it.
 ## Payment activation
 
 The checked-in local configuration defaults to `PAYMENT_ACTIVATION_MODE=DISABLED`.
