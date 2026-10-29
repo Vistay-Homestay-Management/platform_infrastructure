@@ -176,7 +176,8 @@ services:
       BOOKING_GRPC_SERVER_CERT: file:/run/secrets/grpc/server/server.crt
       BOOKING_GRPC_SERVER_KEY: file:/run/secrets/grpc/server/server.key
       BOOKING_GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/server/ca.crt
-      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/payment,spiffe://vistay/service/finance
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/payment,spiffe://vistay/service/finance,spiffe://vistay/service/property
+      INVENTORY_RECONCILIATION_ALLOWED_CALLER_URIS: spiffe://vistay/service/property
       GRPC_MAXIMUM_DEADLINE: 2s
     expose: ["8080", "9090"]
     volumes:

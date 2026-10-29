@@ -302,8 +302,12 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             throw 'Finance must resolve Settlement Property partitions over its mTLS gRPC client channel.'
         }
         if ($configuration.services.booking.environment.GRPC_ALLOWED_CALLER_URIS -ne
-            'spiffe://vistay/service/payment,spiffe://vistay/service/finance') {
-            throw 'Booking gRPC must allow only the Payment and Finance SPIFFE callers.'
+            'spiffe://vistay/service/payment,spiffe://vistay/service/finance,spiffe://vistay/service/property') {
+            throw 'Booking gRPC must allow only the Payment, Finance, and Property SPIFFE callers.'
+        }
+        if ($configuration.services.booking.environment.INVENTORY_RECONCILIATION_ALLOWED_CALLER_URIS -ne
+            'spiffe://vistay/service/property') {
+            throw 'Booking inventory reconciliation must allow only the Property SPIFFE caller.'
         }
         if ($configuration.services.booking.environment.RATE_PROFILE_PUBLISHED_TOPIC -ne
             'vistay.booking.rate-profile-published.v1') {
