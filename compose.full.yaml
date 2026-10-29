@@ -201,6 +201,11 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-payment" password="${KAFKA_PAYMENT_PASSWORD}";
       FINANCE_GRPC_ADDRESS: static://finance:9090
+      USER_GRPC_ADDRESS: static://user:9090
+      USER_GRPC_SSL_BUNDLE: grpc-user-client
+      GRPC_CLIENT_CERT: file:/run/secrets/grpc/payment.crt
+      GRPC_CLIENT_KEY: file:/run/secrets/grpc/payment.key
+      GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt
       GRPC_SERVER_PORT: 9090
       PAYMENT_ACTIVATION_MODE: ${PAYMENT_ACTIVATION_MODE:-DISABLED}
       VIETQR_BASE_URL: ${VIETQR_BASE_URL:-https://api.vietqr.io}
@@ -214,11 +219,14 @@ services:
     expose: ["8080", "9090"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+      - ./certs/generated/grpc/payment-client:/run/secrets/grpc:ro
     depends_on:
       <<: *service-dependencies
       redis:
         condition: service_healthy
       finance:
+        condition: service_started
+      user:
         condition: service_started
     networks: [vistay]
 
