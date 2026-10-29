@@ -33,6 +33,12 @@ server {
         # this route and reports as "restart login cookie not found".
         # Keep the canonical host strict and relax cookies only here.
         proxy_cookie_flags ~ nosecure samesite=lax;
+        # Keycloak keeps its canonical hostname in login form actions. Rebase
+        # those HTML links to the adb-reverse host so the form submission stays
+        # on the same cookie origin (localhost on the Android device).
+        proxy_set_header Accept-Encoding "";
+        sub_filter 'http://identity.localhost' 'http://$host';
+        sub_filter_once off;
     }
     location ~ ^/graphql(?:/|$) {
         set $router_upstream http://router-backoffice:4000;
