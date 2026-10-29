@@ -22,6 +22,7 @@ $kafkaAdminOutput = Join-Path $generatedRoot 'kafka\admin'
 $kafkaClientOutput = Join-Path $generatedRoot 'kafka\client'
 $grpcServerOutput = Join-Path $generatedRoot 'grpc\user-server'
 $grpcBookingServerOutput = Join-Path $generatedRoot 'grpc\booking-server'
+$grpcPropertyServerOutput = Join-Path $generatedRoot 'grpc\property-server'
 $grpcClientOutput = Join-Path $generatedRoot 'grpc\authentication-client'
 $grpcBookingClientOutput = Join-Path $generatedRoot 'grpc\booking-client'
 $grpcFinanceClientOutput = Join-Path $generatedRoot 'grpc\finance-client'
@@ -35,6 +36,7 @@ foreach ($directory in @(
     $kafkaClientOutput,
     $grpcServerOutput,
     $grpcBookingServerOutput,
+    $grpcPropertyServerOutput,
     $grpcClientOutput,
     $grpcBookingClientOutput,
     $grpcFinanceClientOutput,
@@ -164,6 +166,10 @@ ssl.endpoint.identification.algorithm=https
     $grpcBookingServerRequest = Join-Path $workDirectory 'booking-server.csr'
     $grpcBookingServerCertificate = Join-Path $grpcBookingServerOutput 'server.crt'
     $grpcBookingServerExtensions = Join-Path $workDirectory 'booking-server.ext'
+    $grpcPropertyServerKey = Join-Path $grpcPropertyServerOutput 'server.key'
+    $grpcPropertyServerRequest = Join-Path $workDirectory 'property-server.csr'
+    $grpcPropertyServerCertificate = Join-Path $grpcPropertyServerOutput 'server.crt'
+    $grpcPropertyServerExtensions = Join-Path $workDirectory 'property-server.ext'
     $grpcAuthenticationKey = Join-Path $grpcClientOutput 'authentication.key'
     $grpcAuthenticationRequest = Join-Path $workDirectory 'authentication.csr'
     $grpcAuthenticationCertificate = Join-Path $grpcClientOutput 'authentication.crt'
@@ -198,6 +204,13 @@ keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
 subjectAltName=DNS:booking,DNS:service-booking,DNS:localhost,IP:127.0.0.1
 '@ | Set-Content -LiteralPath $grpcBookingServerExtensions -NoNewline
+
+    @'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:property,DNS:service-property,DNS:localhost,IP:127.0.0.1
+'@ | Set-Content -LiteralPath $grpcPropertyServerExtensions -NoNewline
 
     @'
 basicConstraints=critical,CA:FALSE
@@ -262,6 +275,17 @@ subjectAltName=URI:spiffe://vistay/service/notification
     )
     Invoke-OpenSsl @(
         'req', '-new', '-newkey', 'rsa:3072', '-sha256', '-nodes',
+        '-keyout', $grpcPropertyServerKey, '-out', $grpcPropertyServerRequest,
+        '-subj', '/C=VN/L=Ho Chi Minh City/O=ViStay/OU=Platform/CN=service-property'
+    )
+    Invoke-OpenSsl @(
+        'x509', '-req', '-sha256', '-in', $grpcPropertyServerRequest,
+        '-CA', $grpcCaCertificate, '-CAkey', $grpcCaKey, '-CAserial', $grpcCaSerial,
+        '-out', $grpcPropertyServerCertificate, '-days', '825',
+        '-extfile', $grpcPropertyServerExtensions
+    )
+    Invoke-OpenSsl @(
+        'req', '-new', '-newkey', 'rsa:3072', '-sha256', '-nodes',
         '-keyout', $grpcAuthenticationKey, '-out', $grpcAuthenticationRequest,
         '-subj', '/C=VN/L=Ho Chi Minh City/O=ViStay/OU=Platform/CN=service-authentication'
     )
@@ -317,7 +341,7 @@ subjectAltName=URI:spiffe://vistay/service/notification
         '-extfile', $grpcNotificationExtensions
     )
 
-    foreach ($destination in @($grpcServerOutput, $grpcBookingServerOutput, $grpcClientOutput, $grpcBookingClientOutput, $grpcFinanceClientOutput, $grpcPaymentClientOutput, $grpcNotificationClientOutput)) {
+    foreach ($destination in @($grpcServerOutput, $grpcBookingServerOutput, $grpcPropertyServerOutput, $grpcClientOutput, $grpcBookingClientOutput, $grpcFinanceClientOutput, $grpcPaymentClientOutput, $grpcNotificationClientOutput)) {
         Copy-Item -LiteralPath $grpcCaCertificate -Destination (Join-Path $destination 'ca.crt')
     }
 
@@ -329,6 +353,9 @@ subjectAltName=URI:spiffe://vistay/service/notification
             (Join-Path $grpcBookingServerOutput 'ca.crt') `
             $grpcBookingServerCertificate `
             $grpcBookingServerKey `
+            (Join-Path $grpcPropertyServerOutput 'ca.crt') `
+            $grpcPropertyServerCertificate `
+            $grpcPropertyServerKey `
             (Join-Path $grpcClientOutput 'ca.crt') `
             $grpcAuthenticationCertificate `
             $grpcAuthenticationKey `

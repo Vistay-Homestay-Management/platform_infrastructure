@@ -50,6 +50,7 @@ jobs:
             'certs/generated/kafka/client' = @('kafka.truststore.jks')
             'certs/generated/grpc/user-server' = @('ca.crt', 'server.crt', 'server.key')
             'certs/generated/grpc/booking-server' = @('ca.crt', 'server.crt', 'server.key')
+            'certs/generated/grpc/property-server' = @('ca.crt', 'server.crt', 'server.key')
             'certs/generated/grpc/authentication-client' = @('authentication.crt', 'authentication.key', 'ca.crt')
             'certs/generated/grpc/booking-client' = @('booking.crt', 'booking.key', 'ca.crt')
             'certs/generated/grpc/finance-client' = @('finance.crt', 'finance.key', 'ca.crt')

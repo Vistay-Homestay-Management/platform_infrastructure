@@ -136,9 +136,18 @@ services:
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-property" password="${KAFKA_PROPERTY_PASSWORD}";
-    expose: ["8080"]
+      GRPC_SERVER_PORT: 9090
+      GRPC_TLS_ENABLED: "true"
+      GRPC_SSL_BUNDLE: grpc-property-server
+      PROPERTY_GRPC_SERVER_CERT: file:/run/secrets/grpc/server.crt
+      PROPERTY_GRPC_SERVER_KEY: file:/run/secrets/grpc/server.key
+      PROPERTY_GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/ca.crt
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/booking
+      GRPC_MAXIMUM_DEADLINE: 2s
+    expose: ["8080", "9090"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
+      - ./certs/generated/grpc/property-server:/run/secrets/grpc:ro
     depends_on: *service-dependencies
     networks: [vistay]
 
@@ -154,6 +163,8 @@ services:
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-booking" password="${KAFKA_BOOKING_PASSWORD}";
       USER_GRPC_ADDRESS: static://user:9090
       USER_GRPC_SSL_BUNDLE: grpc-user-client
+      PROPERTY_GRPC_ADDRESS: static://property:9090
+      PROPERTY_GRPC_SSL_BUNDLE: grpc-user-client
       GRPC_CLIENT_CERT: file:/run/secrets/grpc/booking.crt
       GRPC_CLIENT_KEY: file:/run/secrets/grpc/booking.key
       GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt
@@ -173,6 +184,8 @@ services:
     depends_on:
       <<: *service-dependencies
       user:
+        condition: service_started
+      property:
         condition: service_started
     networks: [vistay]
 

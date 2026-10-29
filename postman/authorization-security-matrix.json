@@ -55,10 +55,16 @@
       "reason": "Finance Settlement REST is internal-only; controller tests cover exact action permissions, authenticated actor binding, financial-field permission, and ALL-only fail-closed record scope."
     },
     {
-      "id": "scope.partition",
-      "status": "BLOCKED_API",
-      "jiraDependency": "SCRUM-528",
-      "reason": "Booking owns property_id while the authorization policy binds BRANCH; no authoritative Property-to-Branch topology contract exists, so positive PARTITION access remains fail-closed."
+      "id": "scope.partition-positive",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-528 / service_property PropertyPartitionRecordServiceTest, service_booking BookingAuthorizationGrpcServiceTest, and service_payment GrpcBookingProjectionClientTest",
+      "reason": "The Property-to-Branch resolver is internal mTLS gRPC, so positive mapped PARTITION access is verified at the service boundary instead of exposed through public Postman."
+    },
+    {
+      "id": "scope.partition-negative",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-528 / service_property PropertyPartitionGrpcServiceTest and service_payment BookingChargeSecurityWebMvcTest plus GrpcBookingProjectionClientTest",
+      "reason": "Missing mapping fails closed as 403 and resolver unavailability as 503; both are internal service-boundary cases without a safe public mutation API."
     },
     {
       "id": "authorization.expired-role-grant",

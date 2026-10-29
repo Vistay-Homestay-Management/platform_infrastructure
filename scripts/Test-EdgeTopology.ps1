@@ -253,6 +253,32 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
     }
 
     if ($IncludeFullStack) {
+        $property = $configuration.services.property
+        foreach ($expected in @(
+            @{ Name = 'GRPC_TLS_ENABLED'; Value = 'true' },
+            @{ Name = 'PROPERTY_GRPC_SERVER_CERT'; Value = 'file:/run/secrets/grpc/server.crt' },
+            @{ Name = 'PROPERTY_GRPC_SERVER_KEY'; Value = 'file:/run/secrets/grpc/server.key' },
+            @{ Name = 'PROPERTY_GRPC_CLIENT_CA_CERT'; Value = 'file:/run/secrets/grpc/ca.crt' },
+            @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/booking' },
+            @{ Name = 'GRPC_MAXIMUM_DEADLINE'; Value = '2s' }
+        )) {
+            if ($property.environment.($expected.Name) -ne $expected.Value) {
+                throw "Property service $($expected.Name) must equal '$($expected.Value)'."
+            }
+        }
+        $propertyGrpcMount = @($property.volumes | Where-Object target -eq '/run/secrets/grpc')
+        if ($propertyGrpcMount.Count -ne 1 -or
+            $propertyGrpcMount[0].read_only -ne $true -or
+            (Split-Path -Leaf $propertyGrpcMount[0].source) -ne 'property-server') {
+            throw 'Property may mount only its role-scoped gRPC server bundle read-only.'
+        }
+
+        if ($configuration.services.booking.environment.PROPERTY_GRPC_ADDRESS -ne
+                'static://property:9090' -or
+            $configuration.services.booking.environment.PROPERTY_GRPC_SSL_BUNDLE -ne
+                'grpc-user-client') {
+            throw 'Booking must resolve Property partitions over its mTLS gRPC client channel.'
+        }
         if ($configuration.services.booking.environment.GRPC_ALLOWED_CALLER_URIS -ne
             'spiffe://vistay/service/payment,spiffe://vistay/service/finance') {
             throw 'Booking gRPC must allow only the Payment and Finance SPIFFE callers.'
