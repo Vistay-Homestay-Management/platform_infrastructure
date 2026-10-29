@@ -5,6 +5,7 @@ Import these files into Postman:
 - `ViStay-Epic01.postman_collection.json`
 - `ViStay-Authorization.postman_collection.json`
 - `ViStay-Pricing.postman_collection.json`
+- `ViStay-Inventory.postman_collection.json`
 - `ViStay-Local.postman_environment.json`
 
 Select the **ViStay Local** environment before sending requests.
@@ -45,6 +46,10 @@ Enable an optional group only after supplying its required variables:
 | `runPricingLargeOverride=true` | Optional reduction above 20% with large-override approval evidence | Also set `runPricingOverride=true`; User Service V8 catalog and refreshed SUPER_ADMIN authorization snapshot |
 | `runPricingPublication=true` | Publish one fresh immutable profile and create/replay/read an immutable quote snapshot | SUPER_ADMIN `makerAccessToken`; run pricing authoring first with a new unpublished `pricingVersionId` |
 | `runPricingOverrideConsumption=true` | Optionally consume the exact SCRUM-356 override into a quote snapshot and replay it | Also set `runPricingPublication=true`; run folder 04 first and retain an unexpired matching `pricingOverrideId` |
+| `runInventorySeededScenarios=true` | Read available, blocking, history-only, and adjacent exact-unit fixtures | Read-only fixture properties plus `inventoryAccessToken` with `inventory:read` and the required exact scope |
+| `runInventoryValidationScenarios=true` | Verify invalid ranges and missing/unmapped property failures | `inventoryAccessToken`, an available fixture, and an intentionally unmapped Property fixture |
+| `runInventoryAuthorizationScenarios=true` | Verify unauthenticated, foreign-branch, revoked, and scope-without-partition denial | Dedicated empty/revoked/foreign-branch tokens and fixture assignments described below |
+| `runInventoryDependencyScenarios=true` | Verify Property and User/Authorization fail-closed errors | Run one request while only its named local dependency is stopped; restore it immediately |
 
 Never commit populated secret values or an exported environment containing
 tokens.
@@ -254,6 +259,65 @@ and `pricingOverrideConsumption*` evidence before intentionally starting a new
 publication command. Leave both SCRUM-357 flags `false` for ordinary smoke
 runs. No cleanup request exists because publications, outbox facts, overrides,
 and pricing snapshots are audit evidence.
+
+## Exact-unit inventory observation flow
+
+`ViStay-Inventory.postman_collection.json` is a dedicated read-only collection
+for SCRUM-358. It contains no mutation, block-write request, idempotency key, or
+cleanup request. All four inventory flags are checked in as `false`, so importing
+or running the collection with repository defaults skips every live request. CI
+validates the request shape and JavaScript assertions; it does not claim that an
+optional seeded scenario ran against a live stack.
+
+There is intentionally no generic SQL block fixture in this repository. Direct
+ad-hoc inserts could bypass Booking's revision updates, repeatable-read behavior,
+and blocking-range exclusion invariant. No public block-write API or shared seed
+script exists yet: keep the flags `false` until a disposable fixture has been
+prepared through a Booking-owned integration-test/controlled seed path after all
+service migrations have run. Never seed shared or production data. Use the same
+half-open request range in the environment (`2027-06-10` through `2027-06-13`)
+and populate these IDs:
+
+| Variable | Required disposable fixture state |
+| --- | --- |
+| `inventoryAvailablePropertyId` | Active Property-to-Branch membership and no overlap |
+| `inventoryBookingBlockedPropertyId` | Overlapping `BOOKING/TENTATIVE` block |
+| `inventoryMaintenanceBlockedPropertyId` | Overlapping `MAINTENANCE/ACTIVE` block |
+| `inventoryChannelBlockedPropertyId` | Overlapping `CHANNEL/ACTIVE` block with a nonblank normalized provider and opaque external reference |
+| `inventoryHistoryOnlyPropertyId` | Overlapping `RELEASED` and `CANCELLED` rows only |
+| `inventoryAdjacentPropertyId` | One block ending exactly at check-in and one starting exactly at checkout; neither overlaps |
+| `inventoryUnmappedPropertyId` | Existing exact unit with no active Property-to-Branch membership |
+| `inventoryForeignPropertyId` | Active unit in a branch different from the branch-bound caller |
+| `inventoryMissingPropertyId` | Valid UUID that does not exist; the checked-in value is reserved for this local test |
+
+For the available fixture, also copy its authoritative branch, Property
+membership version, and current Booking inventory revision into
+`inventoryExpectedBranchId`, `inventoryExpectedMembershipVersion`, and
+`inventoryExpectedRevision`. The positive assertion compares these exact values;
+it does not accept merely nonempty metadata.
+
+Obtain tokens through Backoffice PKCE. `inventoryAccessToken` must represent an
+active account with `inventory:read` and either explicit `ALL` for an allowed
+global role or the exact current `BRANCH` partition. The other token variables
+must represent, respectively, a foreign branch, a revoked/inactive assignment,
+and an `OWN`, `SELF`, or `ASSIGNED` grant without the exact branch partition.
+Never copy one powerful token into the denial variables.
+
+Run folders in order, enabling only the corresponding flag. A successful seeded
+run proves available and blocked outcomes, sanitized channel evidence,
+nonblocking history, adjacency, stable validation/property codes, and fail-closed
+authorization. For dependency injection, first force an authorization cache miss.
+Then stop only Property for **Property partition dependency unavailable**, or only
+User for **Authorization dependency unavailable**, run that single request, and
+restart the dependency before continuing. Both requests require the exact stable
+error and reject any object that could be mistaken for `available: true`.
+
+The response contract deliberately exposes only property/range, availability,
+revision, branch-membership evidence, observation time, and sanitized overlap
+type/status/range/provider. It must never expose an inventory/block ID,
+booking/hold ID, external channel reference, reason/notes, identity/PII,
+commercial amount, credential, raw authorization evidence, dependency address,
+or SQL text.
 
 ## Payment activation
 

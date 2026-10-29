@@ -254,6 +254,36 @@ type EffectiveGrant
   scopes: [DataScope!]!
 }
 
+type InventoryAvailabilityOverlap
+  @join__type(graph: BOOKING)
+{
+  type: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  channelProvider: String
+}
+
+enum InventoryBlockStatus
+  @join__type(graph: BOOKING)
+{
+  TENTATIVE @join__enumValue(graph: BOOKING)
+  ACTIVE @join__enumValue(graph: BOOKING)
+  RELEASED @join__enumValue(graph: BOOKING)
+  CANCELLED @join__enumValue(graph: BOOKING)
+}
+
+enum InventoryBlockType
+  @join__type(graph: BOOKING)
+{
+  BOOKING @join__enumValue(graph: BOOKING)
+  MAINTENANCE @join__enumValue(graph: BOOKING)
+  CLEANING @join__enumValue(graph: BOOKING)
+  OWNER_USE @join__enumValue(graph: BOOKING)
+  MANUAL @join__enumValue(graph: BOOKING)
+  CHANNEL @join__enumValue(graph: BOOKING)
+}
+
 scalar join__DirectiveArguments
 
 scalar join__FieldSet
@@ -566,6 +596,28 @@ input PricingRuleVersionInput
   actionValue: String!
 }
 
+input PropertyAvailabilityInput
+  @join__type(graph: BOOKING)
+{
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+}
+
+type PropertyAvailabilityObservation
+  @join__type(graph: BOOKING)
+{
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+  available: Boolean!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+  observedAt: String!
+  overlaps: [InventoryAvailabilityOverlap!]!
+}
+
 type PropertyPriceFinalQuote
   @join__type(graph: BOOKING)
 {
@@ -707,6 +759,7 @@ type Query
 {
   booking(id: ID!): Booking! @join__field(graph: BOOKING) @authenticated
   bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
+  propertyAvailability(input: PropertyAvailabilityInput!): PropertyAvailabilityObservation! @join__field(graph: BOOKING) @authenticated
   propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
   propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @join__field(graph: BOOKING) @authenticated
   calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!): PropertyPriceQuote! @join__field(graph: BOOKING) @authenticated

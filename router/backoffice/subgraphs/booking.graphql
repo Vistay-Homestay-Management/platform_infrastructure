@@ -4,6 +4,7 @@ extend schema
 type Query {
   booking(id: ID!): Booking! @authenticated
   bookings(status: String, limit: Int = 50): [Booking!]! @authenticated
+  propertyAvailability(input: PropertyAvailabilityInput!): PropertyAvailabilityObservation! @authenticated
   propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @authenticated
   propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @authenticated
   calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!): PropertyPriceQuote! @authenticated
@@ -29,6 +30,26 @@ type Booking {
   checkOutDate: String!
   totalAmount: String
   currency: String!
+}
+
+type PropertyAvailabilityObservation {
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+  available: Boolean!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+  observedAt: String!
+  overlaps: [InventoryAvailabilityOverlap!]!
+}
+
+type InventoryAvailabilityOverlap {
+  type: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  channelProvider: String
 }
 
 type PropertyRateProfileVersion {
@@ -290,6 +311,28 @@ enum PricingActionType {
   FIXED_DISCOUNT
   PERCENT_SURCHARGE
   FIXED_SURCHARGE
+}
+
+enum InventoryBlockType {
+  BOOKING
+  MAINTENANCE
+  CLEANING
+  OWNER_USE
+  MANUAL
+  CHANNEL
+}
+
+enum InventoryBlockStatus {
+  TENTATIVE
+  ACTIVE
+  RELEASED
+  CANCELLED
+}
+
+input PropertyAvailabilityInput {
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
 }
 
 input CreatePropertyRateProfileVersionInput {

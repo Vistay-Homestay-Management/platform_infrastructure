@@ -18,6 +18,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
       - name: Validate Compose
         run: |
           docker compose --env-file .env.example --profile dependencies config --quiet
@@ -36,6 +39,7 @@ jobs:
         run: |
           ./scripts/Test-PostmanAuthorizationMatrix.ps1
           ./scripts/Test-PostmanPricing.ps1
+          ./scripts/Test-PostmanInventory.ps1
       - name: Validate realm activation and token contract
         shell: pwsh
         run: ./scripts/Test-KeycloakContract.ps1 -EnvFile .env.example
@@ -94,9 +98,6 @@ jobs:
       - name: Test current and rollback Hive Router images
         shell: pwsh
         run: ./scripts/Test-HiveRouterCompatibility.ps1 -EnvFile .env.example
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
       - name: Validate committed supergraph
         shell: pwsh
         run: |
@@ -124,6 +125,8 @@ jobs:
             --header 'X-CSRF-Token: edge-smoke' \
             'http://127.0.0.1:18080/graphql?query=%7Bviewer%7BaccountId%7D%7D')"
           test "$status" = '401'
+          test "$(cat /tmp/vistay-anonymous-response.json)" = \
+            '{"errors":[{"message":"Authentication is required.","extensions":{"code":"UNAUTHENTICATED"}}]}'
 
           curl --fail --silent --show-error --head \
             --header 'Host: identity.localhost' \
