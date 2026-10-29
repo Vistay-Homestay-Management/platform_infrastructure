@@ -191,7 +191,12 @@ foreach ($entry in ([ordered]@{
     'Observe command property revision' = @('available', 'inventoryCommandInitialRevision', 'overlaps')
     'Create active maintenance block' = @('CREATED', 'ACTIVE', 'inventoryCommandCreateSnapshot', 'BigInt')
     'Replay exact create command' = @('inventoryCommandCreateSnapshot', 'to.eql')
-    'Release active maintenance block' = @('RELEASED', 'inventoryCommandReleaseSnapshot', 'BigInt')
+    'Release active maintenance block' = @(
+        'RELEASED', 'inventoryCommandReleaseSnapshot', 'BigInt',
+        'inventoryCommandPropertyId', 'inventoryCommandStartDate',
+        'inventoryCommandEndDateExclusive', 'inventoryCommandBranchId',
+        'inventoryCommandMembershipVersion'
+    )
     'Replay exact release command' = @('inventoryCommandReleaseSnapshot', 'to.eql')
 }).GetEnumerator()) {
     $source = Get-EventSource -Events @($requestByName[$entry.Key].event) -Listener 'test'
