@@ -27,6 +27,12 @@ server {
         set $keycloak_upstream http://keycloak:8080;
         proxy_pass $keycloak_upstream;
         include /etc/nginx/proxy_params;
+        # The USB/adb-reverse development route is plain HTTP on 127.0.0.1.
+        # Keycloak's canonical identity.localhost hostname makes its login
+        # cookies Secure/SameSite=None, which Android Chrome then discards on
+        # this route and reports as "restart login cookie not found".
+        # Keep the canonical host strict and relax cookies only here.
+        proxy_cookie_flags ~ nosecure samesite=lax;
     }
     location ~ ^/graphql(?:/|$) {
         set $router_upstream http://router-backoffice:4000;
