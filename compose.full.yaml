@@ -145,7 +145,7 @@ services:
   booking:
     container_name: service-booking
     build: ../service_booking
-    profiles: ["epic01", "full"]
+    profiles: ["full"]
     environment:
       <<: *service-environment
       DB_NAME: vistay_booking_db
@@ -247,8 +247,6 @@ services:
       finance:
         condition: service_started
       user:
-        condition: service_started
-      booking:
         condition: service_started
     networks: [vistay]
 
