@@ -25,6 +25,7 @@ $grpcClientOutput = Join-Path $generatedRoot 'grpc\authentication-client'
 $grpcBookingClientOutput = Join-Path $generatedRoot 'grpc\booking-client'
 $grpcFinanceClientOutput = Join-Path $generatedRoot 'grpc\finance-client'
 $grpcPaymentClientOutput = Join-Path $generatedRoot 'grpc\payment-client'
+$grpcNotificationClientOutput = Join-Path $generatedRoot 'grpc\notification-client'
 $workDirectory = Join-Path $generatedRoot '.work'
 
 foreach ($directory in @(
@@ -36,6 +37,7 @@ foreach ($directory in @(
     $grpcBookingClientOutput,
     $grpcFinanceClientOutput,
     $grpcPaymentClientOutput,
+    $grpcNotificationClientOutput,
     $workDirectory
 )) {
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
@@ -172,6 +174,10 @@ ssl.endpoint.identification.algorithm=https
     $grpcPaymentRequest = Join-Path $workDirectory 'payment.csr'
     $grpcPaymentCertificate = Join-Path $grpcPaymentClientOutput 'payment.crt'
     $grpcPaymentExtensions = Join-Path $workDirectory 'payment.ext'
+    $grpcNotificationKey = Join-Path $grpcNotificationClientOutput 'notification.key'
+    $grpcNotificationRequest = Join-Path $workDirectory 'notification.csr'
+    $grpcNotificationCertificate = Join-Path $grpcNotificationClientOutput 'notification.crt'
+    $grpcNotificationExtensions = Join-Path $workDirectory 'notification.ext'
 
     @'
 basicConstraints=critical,CA:FALSE
@@ -207,6 +213,13 @@ keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=clientAuth
 subjectAltName=URI:spiffe://vistay/service/payment
 '@ | Set-Content -LiteralPath $grpcPaymentExtensions -NoNewline
+
+    @'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth
+subjectAltName=URI:spiffe://vistay/service/notification
+'@ | Set-Content -LiteralPath $grpcNotificationExtensions -NoNewline
 
     Invoke-OpenSsl @(
         'req', '-x509', '-newkey', 'rsa:4096', '-sha256', '-nodes',
@@ -268,7 +281,19 @@ subjectAltName=URI:spiffe://vistay/service/payment
         '-extfile', $grpcPaymentExtensions
     )
 
-    foreach ($destination in @($grpcServerOutput, $grpcClientOutput, $grpcBookingClientOutput, $grpcFinanceClientOutput, $grpcPaymentClientOutput)) {
+    Invoke-OpenSsl @(
+        'req', '-new', '-newkey', 'rsa:3072', '-sha256', '-nodes',
+        '-keyout', $grpcNotificationKey, '-out', $grpcNotificationRequest,
+        '-subj', '/C=VN/L=Ho Chi Minh City/O=ViStay/OU=Platform/CN=service-notification'
+    )
+    Invoke-OpenSsl @(
+        'x509', '-req', '-sha256', '-in', $grpcNotificationRequest,
+        '-CA', $grpcCaCertificate, '-CAkey', $grpcCaKey, '-CAserial', $grpcCaSerial,
+        '-out', $grpcNotificationCertificate, '-days', '825',
+        '-extfile', $grpcNotificationExtensions
+    )
+
+    foreach ($destination in @($grpcServerOutput, $grpcClientOutput, $grpcBookingClientOutput, $grpcFinanceClientOutput, $grpcPaymentClientOutput, $grpcNotificationClientOutput)) {
         Copy-Item -LiteralPath $grpcCaCertificate -Destination (Join-Path $destination 'ca.crt')
     }
 
@@ -288,7 +313,10 @@ subjectAltName=URI:spiffe://vistay/service/payment
             $grpcFinanceKey `
             (Join-Path $grpcPaymentClientOutput 'ca.crt') `
             $grpcPaymentCertificate `
-            $grpcPaymentKey
+            $grpcPaymentKey `
+            (Join-Path $grpcNotificationClientOutput 'ca.crt') `
+            $grpcNotificationCertificate `
+            $grpcNotificationKey
         if ($LASTEXITCODE -ne 0) {
             throw "chmod failed with exit code $LASTEXITCODE"
         }

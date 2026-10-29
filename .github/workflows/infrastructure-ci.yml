@@ -50,6 +50,7 @@ jobs:
             'certs/generated/grpc/booking-client' = @('booking.crt', 'booking.key', 'ca.crt')
             'certs/generated/grpc/finance-client' = @('finance.crt', 'finance.key', 'ca.crt')
             'certs/generated/grpc/payment-client' = @('payment.crt', 'payment.key', 'ca.crt')
+            'certs/generated/grpc/notification-client' = @('notification.crt', 'notification.key', 'ca.crt')
           }
           foreach ($entry in $expected.GetEnumerator()) {
             $actual = @(Get-ChildItem -LiteralPath $entry.Key -File | Select-Object -ExpandProperty Name | Sort-Object)

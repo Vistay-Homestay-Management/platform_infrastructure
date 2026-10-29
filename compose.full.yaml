@@ -86,7 +86,7 @@ services:
       GRPC_SERVER_CERT: file:/run/secrets/grpc/server.crt
       GRPC_SERVER_KEY: file:/run/secrets/grpc/server.key
       GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/ca.crt
-      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/authentication,spiffe://vistay/service/booking
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/authentication,spiffe://vistay/service/booking,spiffe://vistay/service/finance,spiffe://vistay/service/payment,spiffe://vistay/service/notification
       GRPC_MAXIMUM_DEADLINE: 2s
     expose: ["8080", "9090"]
     volumes:
@@ -111,10 +111,19 @@ services:
       SPRING_FLYWAY_USER: vistay_notification_migrator
       SPRING_FLYWAY_PASSWORD: ${NOTIFICATION_DB_MIGRATOR_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-notification" password="${KAFKA_NOTIFICATION_PASSWORD}";
+      USER_GRPC_ADDRESS: static://user:9090
+      USER_GRPC_SSL_BUNDLE: grpc-user-client
+      GRPC_CLIENT_CERT: file:/run/secrets/grpc/notification.crt
+      GRPC_CLIENT_KEY: file:/run/secrets/grpc/notification.key
+      GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt
     expose: ["8080"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
-    depends_on: *service-dependencies
+      - ./certs/generated/grpc/notification-client:/run/secrets/grpc:ro
+    depends_on:
+      <<: *service-dependencies
+      user:
+        condition: service_started
     networks: [vistay]
 
   property:

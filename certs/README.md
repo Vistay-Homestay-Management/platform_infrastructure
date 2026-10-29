@@ -20,6 +20,7 @@ role-scoped directories:
 - `grpc/booking-client`: Booking client keypair and CA certificate.
 - `grpc/finance-client`: Finance client keypair and CA certificate.
 - `grpc/payment-client`: Payment client keypair and CA certificate.
+- `grpc/notification-client`: Notification client keypair and CA certificate.
 
 Compose never mounts the generated root into a workload. A compromised service
 therefore cannot obtain the Kafka broker/admin identity or a CA signing key.
@@ -31,6 +32,7 @@ The gRPC bundle contains a `service-user` server certificate and an
 `spiffe://vistay/service/authentication`. The Booking client uses
 `spiffe://vistay/service/booking`, the Finance client uses
 `spiffe://vistay/service/finance`, and the Payment client uses
-`spiffe://vistay/service/payment`. The User service requires mutual TLS and
+`spiffe://vistay/service/payment`. The Notification client uses
+`spiffe://vistay/service/notification`. The User service requires mutual TLS and
 rejects callers outside that explicit URI allowlist. Production certificates must
 come from the deployment secret manager and workload identity process.

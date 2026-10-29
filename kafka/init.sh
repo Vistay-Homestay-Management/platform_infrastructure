@@ -92,6 +92,9 @@ grant_producer vistay-user vistay.user.profile-provisioned.v1
 grant_producer vistay-user vistay.user.authorization-changed.v1
 grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-authorization-cache
 grant_consumer vistay-booking vistay.user.authorization-changed.v1 vistay-booking-service-authorization-cache
+grant_consumer vistay-finance vistay.user.authorization-changed.v1 vistay-finance-service-authorization-cache
+grant_consumer vistay-payment vistay.user.authorization-changed.v1 vistay-payment-service-authorization-cache
+grant_consumer vistay-notification vistay.user.authorization-changed.v1 vistay-notification-service-authorization-cache
 grant_consumer vistay-notification vistay.user.profile-provisioned.v1 vistay-notification
 grant_producer vistay-notification vistay.notification.notification-created.v1
 grant_producer vistay-payment vistay.payment.intent-created.v1
