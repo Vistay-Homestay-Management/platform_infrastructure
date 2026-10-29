@@ -39,6 +39,12 @@ $requiredRequests = @{
     'Reject zero-night quote' = 'INVALID_STAY_RANGE'
     'Reject profile property mismatch' = 'PRICING_PROFILE_PROPERTY_MISMATCH'
     'Anonymous caller cannot calculate quote' = '401'
+    'Read override pricing profile' = 'propertyRateProfileVersion'
+    'Calculate override base quote' = 'calculatePropertyPriceQuote'
+    'Apply pricing override at twenty percent' = 'applyPropertyPriceOverride'
+    'Replay exact pricing override' = 'pricingOverrideSnapshot'
+    'Reject changed payload for used override key' = 'IDEMPOTENCY_KEY_REUSED'
+    'Apply large pricing override with approval' = 'largeApprovalRequired'
 }
 
 foreach ($entry in $requiredRequests.GetEnumerator()) {
@@ -124,6 +130,92 @@ foreach ($name in $quoteRequestNames) {
     }
 }
 
+$overrideFolder = $collection.item |
+    Where-Object name -eq '04 Apply audited manual pricing override' |
+    Select-Object -First 1
+if ($null -eq $overrideFolder) {
+    throw 'The collection is missing the SCRUM-356 manual override folder.'
+}
+$overridePrerequest = @($overrideFolder.event |
+    Where-Object listen -eq 'prerequest' | ForEach-Object { $_.script.exec }) -join "`n"
+if (-not $overridePrerequest.Contains('runPricingOverride')) {
+    throw 'The manual override folder must remain guarded by runPricingOverride.'
+}
+
+$applyOverride = $requests | Where-Object name -eq 'Apply pricing override at twenty percent' |
+    Select-Object -First 1
+$overrideReplay = $requests | Where-Object name -eq 'Replay exact pricing override' |
+    Select-Object -First 1
+$changedOverride = $requests |
+    Where-Object name -eq 'Reject changed payload for used override key' |
+    Select-Object -First 1
+$largeOverride = $requests |
+    Where-Object name -eq 'Apply large pricing override with approval' |
+    Select-Object -First 1
+
+if ($applyOverride.request.body.raw -cne $overrideReplay.request.body.raw) {
+    throw 'The exact pricing override replay must send a byte-identical GraphQL body.'
+}
+if (($changedOverride.request.body.raw -ceq $applyOverride.request.body.raw) -or
+    (-not $changedOverride.request.body.raw.Contains('{{pricingOverrideIdempotencyKey}}')) -or
+    (-not $changedOverride.request.body.raw.Contains('{{pricingOverrideConflictingTargetAmount}}'))) {
+    throw 'The idempotency conflict proof must reuse the key with a changed target payload.'
+}
+
+$overrideEvidence = $applyOverride.request.body.raw + (@($applyOverride.event |
+    Where-Object listen -eq 'test' | ForEach-Object { $_.script.exec }) -join "`n")
+foreach ($evidence in @(
+    'expectedBaseQuoteFingerprint', 'manualOverride', 'reductionBps',
+    'largeApprovalRequired', 'overrideScopeType', 'finalPrecedence',
+    'finalComponents', 'pricingOverrideSnapshot',
+    'COMMISSION:recalculated-after-manual-override'
+)) {
+    if (-not $overrideEvidence.Contains($evidence)) {
+        throw "The <=20% override proof does not assert '$evidence'."
+    }
+}
+
+$largePrerequest = @($largeOverride.event |
+    Where-Object listen -eq 'prerequest' | ForEach-Object { $_.script.exec }) -join "`n"
+if (-not $largePrerequest.Contains('runPricingLargeOverride')) {
+    throw 'The large-override proof must remain separately opt-in.'
+}
+$largeEvidence = $largeOverride.request.body.raw + (@($largeOverride.event |
+    Where-Object listen -eq 'test' | ForEach-Object { $_.script.exec }) -join "`n")
+foreach ($evidence in @(
+    'pricing:approve-large-override', 'largeApprovalRequired',
+    'largeApprovalAuthorizationVersion', 'largeApprovalScopeType',
+    'pricingLargeOverrideTargetAmount'
+)) {
+    if (-not $largeEvidence.Contains($evidence)) {
+        throw "The large-override proof does not assert '$evidence'."
+    }
+}
+
+foreach ($name in @(
+    'Apply pricing override at twenty percent', 'Replay exact pricing override',
+    'Reject changed payload for used override key',
+    'Apply large pricing override with approval'
+)) {
+    $raw = ($requests | Where-Object name -eq $name | Select-Object -First 1).request.body.raw
+    if (-not $raw.Contains('mutation ') -or -not $raw.Contains('applyPropertyPriceOverride')) {
+        throw "SCRUM-356 request '$name' must call the audited override mutation."
+    }
+    foreach ($outOfScope in @(
+        'publishPricing', 'activeRateProfile', 'persistQuote', 'bookingSnapshot'
+    )) {
+        if ($raw.Contains($outOfScope)) {
+            throw "SCRUM-356 request '$name' crosses the SCRUM-357 boundary via '$outOfScope'."
+        }
+    }
+}
+
+$overrideAuthorization = $applyOverride.request.header |
+    Where-Object key -eq 'Authorization' | Select-Object -First 1
+if ($overrideAuthorization.value -ne 'Bearer {{makerAccessToken}}') {
+    throw 'The override proof must use the SUPER_ADMIN maker token.'
+}
+
 $anonymous = $requests | Where-Object name -eq 'Anonymous caller cannot calculate quote' |
     Select-Object -First 1
 if (@($anonymous.request.header | Where-Object key -eq 'Authorization').Count -ne 0) {
@@ -141,7 +233,8 @@ foreach ($value in $environment.values) {
     $environmentValues[$value.key] = $value.value
 }
 $requiredEnvironment = @(
-    'runPricingAuthoring', 'runPricingCalculation', 'makerAccessToken', 'targetAccessToken',
+    'runPricingAuthoring', 'runPricingCalculation', 'runPricingOverride',
+    'runPricingLargeOverride', 'makerAccessToken', 'targetAccessToken',
     'pricingPropertyId',
     'pricingEffectiveFrom', 'pricingEffectiveToExclusive', 'pricingBaseDailyRate',
     'pricingIdempotencyKey', 'pricingInvalidCommissionIdempotencyKey',
@@ -152,7 +245,14 @@ $requiredEnvironment = @(
     'pricingQuoteLongCheckIn', 'pricingQuoteLongCheckOut',
     'pricingQuoteGuestCount', 'pricingQuoteChannel', 'pricingQuoteCommissionBps',
     'pricingQuoteOtherPropertyId', 'pricingQuoteShortFingerprint',
-    'pricingQuoteShortTotal', 'pricingQuoteShortSnapshot'
+    'pricingQuoteShortTotal', 'pricingQuoteShortSnapshot',
+    'pricingOverrideIdempotencyKey', 'pricingOverrideCorrelationId',
+    'pricingOverrideBaseFingerprint', 'pricingOverrideBaseLodging',
+    'pricingOverrideBaseTotal', 'pricingOverrideTargetAmount',
+    'pricingOverrideConflictingTargetAmount', 'pricingOverrideId',
+    'pricingOverrideSnapshot', 'pricingLargeOverrideIdempotencyKey',
+    'pricingLargeOverrideCorrelationId', 'pricingLargeOverrideTargetAmount',
+    'pricingLargeOverrideId'
 )
 foreach ($key in $requiredEnvironment) {
     if (-not $environmentValues.ContainsKey($key)) {
@@ -165,11 +265,24 @@ if ($environmentValues['runPricingAuthoring'] -ne 'false') {
 if ($environmentValues['runPricingCalculation'] -ne 'false') {
     throw 'Pricing calculation must remain opt-in in the checked-in environment.'
 }
+if ($environmentValues['runPricingOverride'] -ne 'false') {
+    throw 'Pricing override must remain opt-in in the checked-in environment.'
+}
+if ($environmentValues['runPricingLargeOverride'] -ne 'false') {
+    throw 'Large pricing override must remain separately opt-in in the checked-in environment.'
+}
 foreach ($key in @(
     'pricingPropertyId', 'pricingIdempotencyKey', 'pricingInvalidCommissionIdempotencyKey',
     'pricingInvalidRuleIdempotencyKey', 'pricingDeniedIdempotencyKey', 'pricingVersionId',
     'pricingVersionNumber', 'pricingCreatedSnapshot', 'pricingQuoteShortFingerprint',
-    'pricingQuoteShortTotal', 'pricingQuoteShortSnapshot'
+    'pricingQuoteShortTotal', 'pricingQuoteShortSnapshot',
+    'pricingOverrideIdempotencyKey', 'pricingOverrideCorrelationId',
+    'pricingOverrideBaseFingerprint', 'pricingOverrideBaseLodging',
+    'pricingOverrideBaseTotal', 'pricingOverrideTargetAmount',
+    'pricingOverrideConflictingTargetAmount', 'pricingOverrideId',
+    'pricingOverrideSnapshot', 'pricingLargeOverrideIdempotencyKey',
+    'pricingLargeOverrideCorrelationId', 'pricingLargeOverrideTargetAmount',
+    'pricingLargeOverrideId'
 )) {
     if (-not [string]::IsNullOrEmpty($environmentValues[$key])) {
         throw "Checked-in pricing variable '$key' must be empty."
@@ -181,8 +294,11 @@ foreach ($schemaMarker in @(
     'propertyRateProfileVersion(id: ID!)',
     'propertyRateProfileVersions(propertyId: ID!)',
     'calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!)',
+    'applyPropertyPriceOverride(input: ApplyPropertyPriceOverrideInput!)',
     'type PropertyRateProfileVersion',
     'type PropertyPriceQuote',
+    'type AppliedPropertyPriceOverride',
+    'type PricingManualOverride',
     'type PricingRuleEvaluation',
     'type PriceComponent',
     'input CalculatePropertyPriceQuoteInput',
@@ -193,7 +309,10 @@ foreach ($schemaMarker in @(
     'enum StayProduct',
     'enum PricingRuleEvaluationStatus',
     'enum PriceComponentType',
+    'enum PricingOverrideScopeType',
     'input PricingRuleVersionInput',
+    'input ApplyPropertyPriceOverrideInput',
+    'MANUAL_OVERRIDE',
     'totalAmount: String'
 )) {
     if (-not $bookingSchema.Contains($schemaMarker)) {
@@ -205,4 +324,4 @@ if ($bookingType.Contains('totalAmount: String!')) {
     throw 'Booking totalAmount must remain nullable because authorization can mask it.'
 }
 
-Write-Output "Postman pricing contract passed: $($requests.Count) requests with immutable authoring and deterministic quote explanation assertions."
+Write-Output "Postman pricing contract passed: $($requests.Count) requests with immutable authoring, deterministic quote explanation, and audited override assertions."

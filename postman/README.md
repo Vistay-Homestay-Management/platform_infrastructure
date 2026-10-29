@@ -41,6 +41,8 @@ Enable an optional group only after supplying its required variables:
 | `runAuthorizationUnavailable=true` | Fail-closed User authorization dependency test | Run Authorization E2E first, force a cache miss, then temporarily stop only `service-user` |
 | `runPricingAuthoring=true` | Immutable property pricing authoring and validation flow | `makerAccessToken`, CTV `targetAccessToken`, and an existing exact-unit `pricingPropertyId` |
 | `runPricingCalculation=true` | Deterministic SHORT/MEDIUM/LONG quote calculation and explanation | Run pricing authoring first; retain `pricingVersionId`, `pricingVersionNumber`, and `pricingPropertyId` |
+| `runPricingOverride=true` | Audited manual override, exact replay, and changed-payload idempotency rejection | SUPER_ADMIN `makerAccessToken`; run pricing authoring first |
+| `runPricingLargeOverride=true` | Optional reduction above 20% with large-override approval evidence | Also set `runPricingOverride=true`; User Service V8 catalog and refreshed SUPER_ADMIN authorization snapshot |
 
 Never commit populated secret values or an exported environment containing
 tokens.
@@ -175,9 +177,47 @@ quotes**. The checked-in cases prove:
 The calculation query always supplies `rateProfileVersionId`; it does not pick
 an active version. SCRUM-355 neither publishes pricing, accepts a manual
 override, creates a durable quote ID/expiry, nor stores a booking snapshot.
-Those lifecycle concerns remain in SCRUM-356 and SCRUM-357. The environment's
+Manual override is covered by the separate SCRUM-356 flow below; publication,
+active-version selection, persisted quote lifecycle, and booking snapshots
+remain in SCRUM-357. The environment's
 `pricingQuoteShortSnapshot`, fingerprint and total are temporary Postman
 evidence only; their checked-in values remain empty.
+
+## Manual pricing override flow
+
+The realm does not enable password grant. First run the Authorization collection
+and complete PKCE login for the SUPER_ADMIN maker so `makerAccessToken` is
+populated. The override folder reuses the immutable profile created by **01
+Author immutable pricing version**; it reads that profile again and recalculates
+the base quote on the server before sending any mutation.
+
+Set `runPricingAuthoring=false`, `runPricingCalculation=false`, and
+`runPricingOverride=true`, then run **04 Apply audited manual pricing override**
+in order. The checked-in flow:
+
+1. proves the admin token can read `pricingVersionId`;
+2. calculates a staff-created `ADMIN_PORTAL` base quote and retains only its
+   temporary fingerprint/amount evidence;
+3. applies a reduction at the 20% approval boundary, verifies immutable actor,
+   scope, reason, correlation, before/after, expiry, precedence, component and
+   recalculated-commission evidence;
+4. replays the byte-identical command and proves the same artifact and complete
+   response are returned;
+5. reuses the same idempotency key with a changed target and requires
+   `IDEMPOTENCY_KEY_REUSED`.
+
+To additionally prove `pricing:approve-large-override`, set
+`runPricingLargeOverride=true`. This last request reduces lodging by 25% and
+requires the SUPER_ADMIN snapshot to contain both `pricing:override` and
+`pricing:approve-large-override`. Leave the flag false when User Service has not
+yet run migration V8 or its authorization cache/version has not refreshed.
+
+Override records and command evidence are append-only. There is deliberately no
+cleanup request. Clear `pricingOverrideIdempotencyKey`,
+`pricingOverrideCorrelationId`, `pricingLargeOverrideIdempotencyKey`, and
+`pricingLargeOverrideCorrelationId` before intentionally starting a new command;
+retain them only for the exact replay cases. Keep both override flags `false`
+during ordinary smoke runs and never commit populated tokens or evidence.
 
 ## Payment activation
 

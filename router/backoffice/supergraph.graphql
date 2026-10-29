@@ -37,6 +37,29 @@ enum AccountType
   HOST @join__enumValue(graph: USER)
 }
 
+type AppliedPropertyPriceOverride
+  @join__type(graph: BOOKING)
+{
+  baseQuote: PropertyPriceQuote!
+  manualOverride: PricingManualOverride!
+  finalPrecedence: [String!]!
+  finalComponents: [PriceComponent!]!
+  finalLodgingAmount: String!
+  finalCommissionAmount: String!
+  finalTotalAmount: String!
+}
+
+input ApplyPropertyPriceOverrideInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  quote: CalculatePropertyPriceQuoteInput!
+  expectedBaseQuoteFingerprint: String!
+  targetLodgingAmount: String!
+  reason: String!
+  correlationId: String!
+}
+
 type AuthorizationAssignment
   @join__type(graph: USER)
 {
@@ -250,6 +273,7 @@ type Mutation
   @join__type(graph: USER)
 {
   createPropertyRateProfileVersion(input: CreatePropertyRateProfileVersionInput!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
+  applyPropertyPriceOverride(input: ApplyPropertyPriceOverrideInput!): AppliedPropertyPriceOverride! @join__field(graph: BOOKING) @authenticated
   createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
@@ -365,6 +389,7 @@ enum PriceComponentType
   STAY_PRODUCT_RATE @join__enumValue(graph: BOOKING)
   RULE_DISCOUNT @join__enumValue(graph: BOOKING)
   RULE_SURCHARGE @join__enumValue(graph: BOOKING)
+  MANUAL_OVERRIDE @join__enumValue(graph: BOOKING)
   COMMISSION @join__enumValue(graph: BOOKING)
 }
 
@@ -384,6 +409,51 @@ enum PricingChannel
   ADMIN_PORTAL @join__enumValue(graph: BOOKING)
   CUSTOMER_WEB @join__enumValue(graph: BOOKING)
   OTA @join__enumValue(graph: BOOKING)
+}
+
+type PricingManualOverride
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  idempotencyKey: String!
+  requestHash: String!
+  propertyId: ID!
+  rateProfileVersionId: ID!
+  baseQuoteFingerprint: String!
+  calculationVersion: String!
+  beforeLodgingAmount: String!
+  targetLodgingAmount: String!
+  adjustmentAmount: String!
+  reductionBps: Int!
+  commissionBps: Int!
+  beforeCommissionAmount: String!
+  afterCommissionAmount: String!
+  beforeTotalAmount: String!
+  afterTotalAmount: String!
+  currency: String!
+  largeApprovalRequired: Boolean!
+  actorAdminAccountId: ID!
+  actorAdminProfileId: ID!
+  authorizationVersion: String!
+  overridePermissionCode: String!
+  overrideScopeType: PricingOverrideScopeType!
+  overridePartitionId: ID
+  largeApprovalAuthorizationVersion: String
+  largeApprovalPermissionCode: String
+  largeApprovalScopeType: PricingOverrideScopeType
+  largeApprovalPartitionId: ID
+  reason: String!
+  correlationId: String!
+  quoteTtlMinutes: Int!
+  createdAt: String!
+  expiresAt: String!
+}
+
+enum PricingOverrideScopeType
+  @join__type(graph: BOOKING)
+{
+  ALL @join__enumValue(graph: BOOKING)
+  BRANCH @join__enumValue(graph: BOOKING)
 }
 
 type PricingRuleEvaluation

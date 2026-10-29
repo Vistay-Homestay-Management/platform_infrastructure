@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "4e471f5e-72cb-48d7-b772-d5035038043e",
     "name": "ViStay Pricing",
-    "description": "Opt-in SCRUM-354 immutable authoring plus SCRUM-355 deterministic quote calculation and explanation. Calculation always names an immutable profile version and never publishes, overrides or persists a quote.",
+    "description": "Opt-in SCRUM-354 immutable authoring, SCRUM-355 deterministic quote calculation, and SCRUM-356 audited manual override flow. Every operation names an immutable profile version; override commands are append-only and never publish pricing or persist a booking snapshot.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -15,6 +15,20 @@
           "  for (const key of ['pricingIdempotencyKey', 'pricingInvalidCommissionIdempotencyKey', 'pricingInvalidRuleIdempotencyKey', 'pricingDeniedIdempotencyKey']) {",
           "    if (!pm.environment.get(key)) {",
           "      pm.environment.set(key, pm.variables.replaceIn('pricing-v1-{{$guid}}'));",
+          "    }",
+          "  }",
+          "}",
+          "if (pm.environment.get('runPricingOverride') === 'true') {",
+          "  for (const key of ['pricingOverrideIdempotencyKey', 'pricingOverrideCorrelationId']) {",
+          "    if (!pm.environment.get(key)) {",
+          "      pm.environment.set(key, pm.variables.replaceIn('pricing-override-v1-{{$guid}}'));",
+          "    }",
+          "  }",
+          "}",
+          "if (pm.environment.get('runPricingLargeOverride') === 'true') {",
+          "  for (const key of ['pricingLargeOverrideIdempotencyKey', 'pricingLargeOverrideCorrelationId']) {",
+          "    if (!pm.environment.get(key)) {",
+          "      pm.environment.set(key, pm.variables.replaceIn('pricing-large-override-v1-{{$guid}}'));",
           "    }",
           "  }",
           "}"
@@ -600,6 +614,300 @@
                   "pm.test('router rejects unauthenticated pricing calculation', () => {",
                   "  pm.response.to.have.status(401);",
                   "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Apply audited manual pricing override",
+      "description": "SCRUM-356 re-evaluates the immutable base quote on the server, binds one override artifact to its fingerprint, records authorization/audit evidence, and recalculates commission. It does not publish pricing or persist a booking snapshot.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runPricingOverride') !== 'true') {",
+              "  pm.execution.skipRequest();",
+              "}",
+              "for (const key of ['makerAccessToken', 'pricingVersionId', 'pricingPropertyId']) {",
+              "  if (!pm.environment.get(key)) {",
+              "    throw new Error(`Pricing override requires ${key}; obtain the SUPER_ADMIN token and run SCRUM-354 authoring first.`);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Read override pricing profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query ReadOverrideProfile($id: ID!) { propertyRateProfileVersion(id: $id) { id propertyId version quoteTtlMinutes commissionDefaultBps commissionMaxBps currency } }\",\"variables\":{\"id\":\"{{pricingVersionId}}\"}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const profile = payload.data && payload.data.propertyRateProfileVersion;",
+                  "pm.test('SUPER_ADMIN token can read the immutable override profile', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(profile.id).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(profile.propertyId).to.eql(pm.environment.get('pricingPropertyId'));",
+                  "  pm.expect(profile.quoteTtlMinutes).to.eql(15);",
+                  "  pm.expect(profile.commissionDefaultBps).to.eql(500);",
+                  "  pm.expect(profile.commissionMaxBps).to.eql(2000);",
+                  "  pm.expect(profile.currency).to.eql('VND');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Calculate override base quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query CalculateOverrideBaseQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint calculationVersion rateProfileVersionId propertyId channel staffCreated lodgingAmount commissionBps commissionAmount totalAmount currency } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const quote = payload.data && payload.data.calculatePropertyPriceQuote;",
+                  "pm.test('override base quote is a staff ADMIN_PORTAL calculation', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(quote.fingerprint).to.match(/^[0-9a-f]{64}$/);",
+                  "  pm.expect(quote.rateProfileVersionId).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(quote.propertyId).to.eql(pm.environment.get('pricingPropertyId'));",
+                  "  pm.expect(quote.channel).to.eql('ADMIN_PORTAL');",
+                  "  pm.expect(quote.staffCreated).to.eql(true);",
+                  "  pm.expect(Number(quote.lodgingAmount)).to.be.above(0);",
+                  "  pm.expect(quote.currency).to.eql('VND');",
+                  "});",
+                  "if (quote) {",
+                  "  const before = Number(quote.lodgingAmount);",
+                  "  pm.environment.set('pricingOverrideBaseFingerprint', quote.fingerprint);",
+                  "  pm.environment.set('pricingOverrideBaseLodging', quote.lodgingAmount);",
+                  "  pm.environment.set('pricingOverrideBaseTotal', quote.totalAmount);",
+                  "  pm.environment.set('pricingOverrideTargetAmount', String(Math.ceil(before * 8000 / 10000)));",
+                  "  pm.environment.set('pricingOverrideConflictingTargetAmount', String(Math.ceil(before * 8000 / 10000) + 1));",
+                  "  pm.environment.set('pricingLargeOverrideTargetAmount', String(Math.floor(before * 7500 / 10000)));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Apply pricing override at twenty percent",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingOverrideCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ApplyPricingOverride($input: ApplyPropertyPriceOverrideInput!) { applyPropertyPriceOverride(input: $input) { baseQuote { fingerprint lodgingAmount commissionBps commissionAmount totalAmount currency } manualOverride { id idempotencyKey propertyId rateProfileVersionId baseQuoteFingerprint calculationVersion beforeLodgingAmount targetLodgingAmount adjustmentAmount reductionBps commissionBps beforeCommissionAmount afterCommissionAmount beforeTotalAmount afterTotalAmount currency largeApprovalRequired actorAdminAccountId actorAdminProfileId authorizationVersion overrideScopeType overridePartitionId largeApprovalAuthorizationVersion largeApprovalScopeType largeApprovalPartitionId reason correlationId quoteTtlMinutes createdAt expiresAt } finalPrecedence finalComponents { order type code quantity unitAmount factorBps amount } finalLodgingAmount finalCommissionAmount finalTotalAmount } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingOverrideIdempotencyKey}}\",\"quote\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedBaseQuoteFingerprint\":\"{{pricingOverrideBaseFingerprint}}\",\"targetLodgingAmount\":\"{{pricingOverrideTargetAmount}}\",\"reason\":\"Postman validates an audited pricing reduction at the approval boundary\",\"correlationId\":\"{{pricingOverrideCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const applied = payload.data && payload.data.applyPropertyPriceOverride;",
+                  "const override = applied && applied.manualOverride;",
+                  "pm.test('twenty-percent override persists exact authorization and audit evidence', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(override.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(override.idempotencyKey).to.eql(pm.environment.get('pricingOverrideIdempotencyKey'));",
+                  "  pm.expect(override.baseQuoteFingerprint).to.eql(pm.environment.get('pricingOverrideBaseFingerprint'));",
+                  "  pm.expect(override.beforeLodgingAmount).to.eql(pm.environment.get('pricingOverrideBaseLodging'));",
+                  "  pm.expect(override.targetLodgingAmount).to.eql(pm.environment.get('pricingOverrideTargetAmount'));",
+                  "  pm.expect(override.reductionBps).to.be.at.most(2000);",
+                  "  pm.expect(override.largeApprovalRequired).to.eql(false);",
+                  "  pm.expect(override.largeApprovalAuthorizationVersion).to.eql(null);",
+                  "  pm.expect(override.overrideScopeType).to.eql('ALL');",
+                  "  pm.expect(override.reason).to.eql('Postman validates an audited pricing reduction at the approval boundary');",
+                  "  pm.expect(override.correlationId).to.eql(pm.environment.get('pricingOverrideCorrelationId'));",
+                  "  pm.expect(new Date(override.expiresAt).getTime()).to.be.above(new Date(override.createdAt).getTime());",
+                  "});",
+                  "pm.test('manual override has highest precedence and commission is recalculated', () => {",
+                  "  const expectedCommission = Math.floor((Number(override.targetLodgingAmount) * override.commissionBps + 5000) / 10000);",
+                  "  pm.expect(Number(override.afterCommissionAmount)).to.eql(expectedCommission);",
+                  "  pm.expect(applied.finalLodgingAmount).to.eql(override.targetLodgingAmount);",
+                  "  pm.expect(applied.finalCommissionAmount).to.eql(override.afterCommissionAmount);",
+                  "  pm.expect(applied.finalTotalAmount).to.eql(override.afterTotalAmount);",
+                  "  pm.expect(applied.finalPrecedence).to.include('MANUAL_OVERRIDE:whole-stay-lodging-reduction');",
+                  "  pm.expect(applied.finalPrecedence).to.include('COMMISSION:recalculated-after-manual-override');",
+                  "  pm.expect(applied.finalComponents.some(component => component.type === 'MANUAL_OVERRIDE')).to.eql(true);",
+                  "  pm.expect(applied.finalComponents.reduce((sum, component) => sum + Number(component.amount), 0)).to.eql(Number(applied.finalTotalAmount));",
+                  "});",
+                  "if (applied) {",
+                  "  pm.environment.set('pricingOverrideId', override.id);",
+                  "  pm.environment.set('pricingOverrideSnapshot', JSON.stringify(applied));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay exact pricing override",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingOverrideCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ApplyPricingOverride($input: ApplyPropertyPriceOverrideInput!) { applyPropertyPriceOverride(input: $input) { baseQuote { fingerprint lodgingAmount commissionBps commissionAmount totalAmount currency } manualOverride { id idempotencyKey propertyId rateProfileVersionId baseQuoteFingerprint calculationVersion beforeLodgingAmount targetLodgingAmount adjustmentAmount reductionBps commissionBps beforeCommissionAmount afterCommissionAmount beforeTotalAmount afterTotalAmount currency largeApprovalRequired actorAdminAccountId actorAdminProfileId authorizationVersion overrideScopeType overridePartitionId largeApprovalAuthorizationVersion largeApprovalScopeType largeApprovalPartitionId reason correlationId quoteTtlMinutes createdAt expiresAt } finalPrecedence finalComponents { order type code quantity unitAmount factorBps amount } finalLodgingAmount finalCommissionAmount finalTotalAmount } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingOverrideIdempotencyKey}}\",\"quote\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedBaseQuoteFingerprint\":\"{{pricingOverrideBaseFingerprint}}\",\"targetLodgingAmount\":\"{{pricingOverrideTargetAmount}}\",\"reason\":\"Postman validates an audited pricing reduction at the approval boundary\",\"correlationId\":\"{{pricingOverrideCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const applied = payload.data && payload.data.applyPropertyPriceOverride;",
+                  "pm.test('exact override replay returns the immutable original artifact', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(applied.manualOverride.id).to.eql(pm.environment.get('pricingOverrideId'));",
+                  "  pm.expect(JSON.stringify(applied)).to.eql(pm.environment.get('pricingOverrideSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject changed payload for used override key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation RejectReusedOverrideKey($input: ApplyPropertyPriceOverrideInput!) { applyPropertyPriceOverride(input: $input) { manualOverride { id } } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingOverrideIdempotencyKey}}\",\"quote\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedBaseQuoteFingerprint\":\"{{pricingOverrideBaseFingerprint}}\",\"targetLodgingAmount\":\"{{pricingOverrideConflictingTargetAmount}}\",\"reason\":\"Postman validates an audited pricing reduction at the approval boundary\",\"correlationId\":\"{{pricingOverrideCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('idempotency key cannot be reused with a changed target', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors[0].extensions.code).to.eql('IDEMPOTENCY_KEY_REUSED');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Apply large pricing override with approval",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingLargeOverrideCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ApplyLargePricingOverride($input: ApplyPropertyPriceOverrideInput!) { applyPropertyPriceOverride(input: $input) { manualOverride { id baseQuoteFingerprint beforeLodgingAmount targetLodgingAmount reductionBps largeApprovalRequired authorizationVersion overrideScopeType largeApprovalAuthorizationVersion largeApprovalScopeType reason correlationId expiresAt } finalLodgingAmount finalCommissionAmount finalTotalAmount } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingLargeOverrideIdempotencyKey}}\",\"quote\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedBaseQuoteFingerprint\":\"{{pricingOverrideBaseFingerprint}}\",\"targetLodgingAmount\":\"{{pricingLargeOverrideTargetAmount}}\",\"reason\":\"Postman validates SUPER_ADMIN approval for a reduction above twenty percent\",\"correlationId\":\"{{pricingLargeOverrideCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runPricingLargeOverride') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const applied = payload.data && payload.data.applyPropertyPriceOverride;",
+                  "const override = applied && applied.manualOverride;",
+                  "pm.test('pricing:approve-large-override records both authorization decisions', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(override.reductionBps).to.be.above(2000);",
+                  "  pm.expect(override.largeApprovalRequired).to.eql(true);",
+                  "  pm.expect(override.authorizationVersion).to.not.eql(null);",
+                  "  pm.expect(override.largeApprovalAuthorizationVersion).to.not.eql(null);",
+                  "  pm.expect(override.overrideScopeType).to.eql('ALL');",
+                  "  pm.expect(override.largeApprovalScopeType).to.eql('ALL');",
+                  "  pm.expect(applied.finalLodgingAmount).to.eql(pm.environment.get('pricingLargeOverrideTargetAmount'));",
+                  "});",
+                  "if (override) {",
+                  "  pm.environment.set('pricingLargeOverrideId', override.id);",
+                  "}"
                 ]
               }
             }
