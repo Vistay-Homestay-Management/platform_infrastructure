@@ -37,6 +37,7 @@ $requiredCases = @(
     'authorization.immediate-reduction',
     'authorization.dependency-unavailable',
     'payment-intent.record-idor',
+    'settlement.action-actor-field-policy',
     'scope.partition',
     'authorization.expired-role-grant',
     'export.bulk-access'

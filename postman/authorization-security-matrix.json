@@ -49,6 +49,12 @@
       "reason": "Payment REST is internal-only and no safe deterministic Payment Intent Postman fixture exists yet."
     },
     {
+      "id": "settlement.action-actor-field-policy",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-530 / service_finance SettlementControllerAuthorizationTest and FinanceOperationalAuthorizationTest",
+      "reason": "Finance Settlement REST is internal-only; controller tests cover exact action permissions, authenticated actor binding, financial-field permission, and ALL-only fail-closed record scope."
+    },
+    {
       "id": "scope.partition",
       "status": "BLOCKED_API",
       "jiraDependency": "SCRUM-528",
@@ -62,9 +68,9 @@
     },
     {
       "id": "export.bulk-access",
-      "status": "BLOCKED_API",
-      "jiraDependency": "SCRUM-524",
-      "reason": "No migrated public export or bulk resource API currently exists."
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-530 / service_finance SettlementControllerAuthorizationTest",
+      "reason": "Settlement export now enforces settlement:export, finance:export, and finance:read, but the Finance REST endpoint remains internal-only and is not safely reachable by the public Postman collection."
     }
   ]
 }
