@@ -142,7 +142,7 @@ services:
       PROPERTY_GRPC_SERVER_CERT: file:/run/secrets/grpc/server.crt
       PROPERTY_GRPC_SERVER_KEY: file:/run/secrets/grpc/server.key
       PROPERTY_GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/ca.crt
-      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/booking
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/booking,spiffe://vistay/service/finance
       GRPC_MAXIMUM_DEADLINE: 2s
     expose: ["8080", "9090"]
     volumes:
@@ -205,6 +205,8 @@ services:
       USER_GRPC_SSL_BUNDLE: grpc-user-client
       BOOKING_GRPC_ADDRESS: static://booking:9090
       BOOKING_GRPC_SSL_BUNDLE: grpc-user-client
+      PROPERTY_GRPC_ADDRESS: static://property:9090
+      PROPERTY_GRPC_SSL_BUNDLE: grpc-user-client
       GRPC_CLIENT_CERT: file:/run/secrets/grpc/finance.crt
       GRPC_CLIENT_KEY: file:/run/secrets/grpc/finance.key
       GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt

@@ -259,7 +259,7 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             @{ Name = 'PROPERTY_GRPC_SERVER_CERT'; Value = 'file:/run/secrets/grpc/server.crt' },
             @{ Name = 'PROPERTY_GRPC_SERVER_KEY'; Value = 'file:/run/secrets/grpc/server.key' },
             @{ Name = 'PROPERTY_GRPC_CLIENT_CA_CERT'; Value = 'file:/run/secrets/grpc/ca.crt' },
-            @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/booking' },
+            @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/booking,spiffe://vistay/service/finance' },
             @{ Name = 'GRPC_MAXIMUM_DEADLINE'; Value = '2s' }
         )) {
             if ($property.environment.($expected.Name) -ne $expected.Value) {
@@ -278,6 +278,12 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             $configuration.services.booking.environment.PROPERTY_GRPC_SSL_BUNDLE -ne
                 'grpc-user-client') {
             throw 'Booking must resolve Property partitions over its mTLS gRPC client channel.'
+        }
+        if ($configuration.services.finance.environment.PROPERTY_GRPC_ADDRESS -ne
+                'static://property:9090' -or
+            $configuration.services.finance.environment.PROPERTY_GRPC_SSL_BUNDLE -ne
+                'grpc-user-client') {
+            throw 'Finance must resolve Settlement Property partitions over its mTLS gRPC client channel.'
         }
         if ($configuration.services.booking.environment.GRPC_ALLOWED_CALLER_URIS -ne
             'spiffe://vistay/service/payment,spiffe://vistay/service/finance') {
