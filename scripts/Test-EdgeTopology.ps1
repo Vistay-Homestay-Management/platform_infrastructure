@@ -191,10 +191,16 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
     }
 
     $kafkaInitializer = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'kafka/init.sh')
-    if (-not $kafkaInitializer.Contains(
-        'grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-authorization-cache'
+    foreach ($authorizationConsumer in @(
+        'grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-authorization-cache',
+        'grant_consumer vistay-booking vistay.user.authorization-changed.v1 vistay-booking-service-authorization-cache',
+        'grant_consumer vistay-finance vistay.user.authorization-changed.v1 vistay-finance-service-authorization-cache',
+        'grant_consumer vistay-payment vistay.user.authorization-changed.v1 vistay-payment-service-authorization-cache',
+        'grant_consumer vistay-notification vistay.user.authorization-changed.v1 vistay-notification-service-authorization-cache'
     )) {
-        throw 'Kafka ACLs must cover the Authentication authorization-cache consumer group exactly.'
+        if (-not $kafkaInitializer.Contains($authorizationConsumer)) {
+            throw "Kafka ACLs must cover authorization-cache consumer '$authorizationConsumer' exactly."
+        }
     }
 
     $user = $configuration.services.user
@@ -203,7 +209,7 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         @{ Name = 'GRPC_SERVER_CERT'; Value = 'file:/run/secrets/grpc/server.crt' },
         @{ Name = 'GRPC_SERVER_KEY'; Value = 'file:/run/secrets/grpc/server.key' },
         @{ Name = 'GRPC_CLIENT_CA_CERT'; Value = 'file:/run/secrets/grpc/ca.crt' },
-        @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/authentication,spiffe://vistay/service/booking' },
+        @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/authentication,spiffe://vistay/service/booking,spiffe://vistay/service/finance,spiffe://vistay/service/payment,spiffe://vistay/service/notification' },
         @{ Name = 'GRPC_MAXIMUM_DEADLINE'; Value = '2s' }
     )) {
         if ($user.environment.($expected.Name) -ne $expected.Value) {
@@ -224,6 +230,14 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         $authenticationGrpcMount[0].read_only -ne $true -or
         (Split-Path -Leaf $authenticationGrpcMount[0].source) -ne 'authentication-client') {
         throw 'Authentication may mount only its role-scoped gRPC client bundle read-only.'
+    }
+
+    $notificationGrpcMount = @($configuration.services.notification.volumes |
+        Where-Object target -eq '/run/secrets/grpc')
+    if ($notificationGrpcMount.Count -ne 1 -or
+        $notificationGrpcMount[0].read_only -ne $true -or
+        (Split-Path -Leaf $notificationGrpcMount[0].source) -ne 'notification-client') {
+        throw 'Notification may mount only its role-scoped gRPC client bundle read-only.'
     }
 
     if ($IncludeFullStack) {
