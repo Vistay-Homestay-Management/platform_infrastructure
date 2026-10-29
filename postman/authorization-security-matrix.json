@@ -50,9 +50,9 @@
     },
     {
       "id": "scope.partition",
-      "status": "SERVICE_TEST_ONLY",
-      "evidence": "service_payment PaymentIntentAuthorizationTest and BookingCharge authorization tests",
-      "reason": "The public Booking GraphQL schema has no partition-aware resource endpoint; Payment REST remains internal-only."
+      "status": "BLOCKED_API",
+      "jiraDependency": "SCRUM-528",
+      "reason": "Booking owns property_id while the authorization policy binds BRANCH; no authoritative Property-to-Branch topology contract exists, so positive PARTITION access remains fail-closed."
     },
     {
       "id": "authorization.expired-role-grant",
