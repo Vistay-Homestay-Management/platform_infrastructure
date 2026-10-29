@@ -1,0 +1,275 @@
+{
+  "info": {
+    "_postman_id": "4e471f5e-72cb-48d7-b772-d5035038043e",
+    "name": "ViStay Pricing Authoring",
+    "description": "Opt-in SCRUM-354 pricing-profile authoring flow. The collection creates one immutable property pricing version, proves exact idempotent replay, exercises validation and authorization denial, then reads the authored version. Clear pricingIdempotencyKey before intentionally changing the happy-path payload.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.environment.get('runPricingAuthoring') !== 'true') {",
+          "  pm.execution.skipRequest();",
+          "}",
+          "for (const key of ['pricingIdempotencyKey', 'pricingInvalidCommissionIdempotencyKey', 'pricingInvalidRuleIdempotencyKey', 'pricingDeniedIdempotencyKey']) {",
+          "  if (!pm.environment.get(key)) {",
+          "    pm.environment.set(key, pm.variables.replaceIn('pricing-v1-{{$guid}}'));",
+          "  }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Author immutable pricing version",
+      "item": [
+        {
+          "name": "Create property pricing version",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreatePricing($input: CreatePropertyRateProfileVersionInput!) { createPropertyRateProfileVersion(input: $input) { id propertyId version effectiveFrom effectiveToExclusive baseDailyRate mediumDailyFactorBps longDailyFactorBps currency checkInTime checkOutTime turnoverMinutes quoteTtlMinutes commissionDefaultBps commissionMaxBps reason authoredByAdminAccountId correlationId authoredAt rules { id code name effectiveFrom effectiveToExclusive priority daysOfWeek channels minimumStayDays maximumStayDays minimumGuests maximumGuests actionType actionValue } } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingIdempotencyKey}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"baseDailyRate\":\"{{pricingBaseDailyRate}}\",\"mediumDailyFactorBps\":7000,\"longDailyFactorBps\":5500,\"checkInTime\":\"14:00\",\"checkOutTime\":\"12:00\",\"turnoverMinutes\":120,\"quoteTtlMinutes\":15,\"commissionDefaultBps\":500,\"commissionMaxBps\":2000,\"reason\":\"Postman verifies immutable pricing authoring\",\"correlationId\":\"postman-scrum-354\",\"rules\":[{\"code\":\"short_weekend_v1\",\"name\":\"Short stay weekend surcharge\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"priority\":100,\"daysOfWeek\":[6,7],\"channels\":[\"ADMIN_PORTAL\",\"CUSTOMER_WEB\",\"OTA\"],\"minimumStayDays\":1,\"maximumStayDays\":29,\"minimumGuests\":1,\"maximumGuests\":20,\"actionType\":\"PERCENT_SURCHARGE\",\"actionValue\":\"1000\"}]}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('pricing version is authored', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(payload.data.createPropertyRateProfileVersion.propertyId).to.eql(pm.environment.get('pricingPropertyId'));",
+                  "  pm.expect(payload.data.createPropertyRateProfileVersion.currency).to.eql('VND');",
+                  "  pm.expect(payload.data.createPropertyRateProfileVersion.rules).to.have.lengthOf(1);",
+                  "});",
+                  "const created = payload.data && payload.data.createPropertyRateProfileVersion;",
+                  "if (created) {",
+                  "  pm.environment.set('pricingVersionId', created.id);",
+                  "  pm.environment.set('pricingVersionNumber', String(created.version));",
+                  "  pm.environment.set('pricingCreatedSnapshot', JSON.stringify(created));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay exact pricing command",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreatePricing($input: CreatePropertyRateProfileVersionInput!) { createPropertyRateProfileVersion(input: $input) { id propertyId version effectiveFrom effectiveToExclusive baseDailyRate mediumDailyFactorBps longDailyFactorBps currency checkInTime checkOutTime turnoverMinutes quoteTtlMinutes commissionDefaultBps commissionMaxBps reason authoredByAdminAccountId correlationId authoredAt rules { id code name effectiveFrom effectiveToExclusive priority daysOfWeek channels minimumStayDays maximumStayDays minimumGuests maximumGuests actionType actionValue } } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingIdempotencyKey}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"baseDailyRate\":\"{{pricingBaseDailyRate}}\",\"mediumDailyFactorBps\":7000,\"longDailyFactorBps\":5500,\"checkInTime\":\"14:00\",\"checkOutTime\":\"12:00\",\"turnoverMinutes\":120,\"quoteTtlMinutes\":15,\"commissionDefaultBps\":500,\"commissionMaxBps\":2000,\"reason\":\"Postman verifies immutable pricing authoring\",\"correlationId\":\"postman-scrum-354\",\"rules\":[{\"code\":\"short_weekend_v1\",\"name\":\"Short stay weekend surcharge\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"priority\":100,\"daysOfWeek\":[6,7],\"channels\":[\"ADMIN_PORTAL\",\"CUSTOMER_WEB\",\"OTA\"],\"minimumStayDays\":1,\"maximumStayDays\":29,\"minimumGuests\":1,\"maximumGuests\":20,\"actionType\":\"PERCENT_SURCHARGE\",\"actionValue\":\"1000\"}]}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('exact replay returns the original immutable result', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(payload.data.createPropertyRateProfileVersion.id).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(JSON.stringify(payload.data.createPropertyRateProfileVersion)).to.eql(pm.environment.get('pricingCreatedSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject commission above v1 ceiling",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreatePricing($input: CreatePropertyRateProfileVersionInput!) { createPropertyRateProfileVersion(input: $input) { id } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingInvalidCommissionIdempotencyKey}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"baseDailyRate\":\"{{pricingBaseDailyRate}}\",\"commissionDefaultBps\":2001,\"commissionMaxBps\":2001,\"reason\":\"Postman rejects commission above ceiling\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('commission above 20 percent is rejected', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.data).to.eql(null);",
+                  "  pm.expect(payload.errors[0].extensions.code).to.eql('INVALID_COMMISSION_POLICY');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject non-short-stay pricing rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreatePricing($input: CreatePropertyRateProfileVersionInput!) { createPropertyRateProfileVersion(input: $input) { id } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingInvalidRuleIdempotencyKey}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"baseDailyRate\":\"{{pricingBaseDailyRate}}\",\"reason\":\"Postman rejects rule outside short stays\",\"rules\":[{\"code\":\"invalid_medium_rule\",\"name\":\"Invalid medium stay discount\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"priority\":100,\"minimumStayDays\":1,\"maximumStayDays\":30,\"actionType\":\"PERCENT_DISCOUNT\",\"actionValue\":\"500\"}]}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('v1 custom rules remain short-stay only', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.data).to.eql(null);",
+                  "  pm.expect(payload.errors[0].extensions.code).to.eql('INVALID_RULE_STAY_RANGE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CTV cannot author property pricing",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreatePricing($input: CreatePropertyRateProfileVersionInput!) { createPropertyRateProfileVersion(input: $input) { id } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingDeniedIdempotencyKey}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"effectiveFrom\":\"{{pricingEffectiveFrom}}\",\"effectiveToExclusive\":\"{{pricingEffectiveToExclusive}}\",\"baseDailyRate\":\"{{pricingBaseDailyRate}}\",\"reason\":\"Postman proves pricing author denial\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('CTV without pricing:update is denied', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.data).to.eql(null);",
+                  "  pm.expect(payload.errors[0].extensions.code).to.eql('FORBIDDEN_PERMISSION');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Read pricing versions",
+      "item": [
+        {
+          "name": "Read authored pricing version",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query PricingVersion($id: ID!) { propertyRateProfileVersion(id: $id) { id propertyId version effectiveFrom effectiveToExclusive baseDailyRate mediumDailyFactorBps longDailyFactorBps currency checkInTime checkOutTime turnoverMinutes quoteTtlMinutes commissionDefaultBps commissionMaxBps reason authoredByAdminAccountId correlationId authoredAt rules { id code name effectiveFrom effectiveToExclusive priority daysOfWeek channels minimumStayDays maximumStayDays minimumGuests maximumGuests actionType actionValue } } }\",\"variables\":{\"id\":\"{{pricingVersionId}}\"}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('authored version can be read by ID', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(JSON.stringify(payload.data.propertyRateProfileVersion)).to.eql(pm.environment.get('pricingCreatedSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List property pricing versions",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query PricingVersions($propertyId: ID!) { propertyRateProfileVersions(propertyId: $propertyId) { id propertyId version effectiveFrom effectiveToExclusive baseDailyRate mediumDailyFactorBps longDailyFactorBps currency checkInTime checkOutTime turnoverMinutes quoteTtlMinutes commissionDefaultBps commissionMaxBps reason authoredByAdminAccountId correlationId authoredAt rules { id code name effectiveFrom effectiveToExclusive priority daysOfWeek channels minimumStayDays maximumStayDays minimumGuests maximumGuests actionType actionValue } } }\",\"variables\":{\"propertyId\":\"{{pricingPropertyId}}\"}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('property history includes the authored version', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  const authored = payload.data.propertyRateProfileVersions.find(item => item.id === pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(authored).to.not.eql(undefined);",
+                  "  pm.expect(JSON.stringify(authored)).to.eql(pm.environment.get('pricingCreatedSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

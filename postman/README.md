@@ -1,9 +1,10 @@
 # ViStay Epic 01 Postman
 
-Import both files into Postman:
+Import these files into Postman:
 
 - `ViStay-Epic01.postman_collection.json`
 - `ViStay-Authorization.postman_collection.json`
+- `ViStay-Pricing.postman_collection.json`
 - `ViStay-Local.postman_environment.json`
 
 Select the **ViStay Local** environment before sending requests.
@@ -18,6 +19,7 @@ Postman PKCE client without recreating the realm:
 
 The same script can refresh the already initialized browser client after realm
 configuration changes by adding `-ClientId vistay-backoffice-web`.
+
 ## Safe defaults
 
 The `Safe smoke` folder is read-only and can run against the default Epic 01
@@ -37,6 +39,7 @@ Enable an optional group only after supplying its required variables:
 | `runVietQrCallbacks=true` | VietQR token and transaction callbacks | Callback credentials and `CALLBACK_ENABLED` mode |
 | `runAuthorizationE2E=true` | Maker-checker and Booking scope flow | Full profile, three PKCE tokens, local booking fixtures |
 | `runAuthorizationUnavailable=true` | Fail-closed User authorization dependency test | Run Authorization E2E first, force a cache miss, then temporarily stop only `service-user` |
+| `runPricingAuthoring=true` | Immutable property pricing authoring and validation flow | `makerAccessToken`, CTV `targetAccessToken`, and an existing exact-unit `pricingPropertyId` |
 
 Never commit populated secret values or an exported environment containing
 tokens.
@@ -127,6 +130,31 @@ assignments, immediate scope reduction and authorization dependency failure.
 The last failure-injection request is disabled separately because it requires
 briefly stopping User Service; restart User Service immediately after running
 it.
+
+## Pricing authoring flow
+
+Run the Authorization collection first to obtain `makerAccessToken` for the
+SUPER_ADMIN author and `targetAccessToken` for the CTV denial case. Set
+`pricingPropertyId` to an existing Property `properties.id`; in the current
+model that ID is the exact physical unit, not a property-type or branch ID.
+Then set `runPricingAuthoring=true` and run **ViStay Pricing Authoring** in its
+checked-in order:
+
+1. create one immutable version and retain its complete response snapshot;
+2. replay the exact command and prove the same version is returned;
+3. reject commission above the v1 20% ceiling and a custom rule spanning more
+   than 29 days;
+4. prove a CTV without `pricing:update` cannot author a version;
+5. read the version by ID and find it in the property's version history.
+
+The collection uses the approved v1 defaults: VND 1,000,000 base daily rate,
+70% medium-stay factor, 55% long-stay factor, 14:00 check-in, 12:00 checkout,
+120-minute turnover, 5% default commission, and a 20% commission ceiling.
+Pricing authoring is append-only, so there is no delete/cleanup request. Clear
+`pricingIdempotencyKey` before intentionally changing any happy-path input;
+keeping the same key is only valid for the exact replay test. Leave
+`runPricingAuthoring=false` during ordinary smoke runs.
+
 ## Payment activation
 
 The checked-in local configuration defaults to `PAYMENT_ACTIVATION_MODE=DISABLED`.

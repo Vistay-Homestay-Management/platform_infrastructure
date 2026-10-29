@@ -139,7 +139,7 @@ type Booking
   status: String!
   checkInDate: String!
   checkOutDate: String!
-  totalAmount: String!
+  totalAmount: String
   currency: String!
 }
 
@@ -149,6 +149,27 @@ input CancelPaymentIntentInput
   paymentIntentId: ID!
   expectedVersion: Int!
   reason: String!
+}
+
+input CreatePropertyRateProfileVersionInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  propertyId: ID!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  baseDailyRate: String!
+  mediumDailyFactorBps: Int = 7000
+  longDailyFactorBps: Int = 5500
+  checkInTime: String = "14:00"
+  checkOutTime: String = "12:00"
+  turnoverMinutes: Int = 120
+  quoteTtlMinutes: Int = 15
+  commissionDefaultBps: Int = 500
+  commissionMaxBps: Int = 2000
+  reason: String!
+  correlationId: String
+  rules: [PricingRuleVersionInput!]! = []
 }
 
 input CreateVietQrPaymentIntentInput
@@ -211,9 +232,11 @@ enum link__Purpose {
 }
 
 type Mutation
+  @join__type(graph: BOOKING)
   @join__type(graph: PAYMENT)
   @join__type(graph: USER)
 {
+  createPropertyRateProfileVersion(input: CreatePropertyRateProfileVersionInput!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
   createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
@@ -307,6 +330,86 @@ type PersonalProfile
   replayed: Boolean!
 }
 
+enum PricingActionType
+  @join__type(graph: BOOKING)
+{
+  FIXED_DAILY_RATE @join__enumValue(graph: BOOKING)
+  PERCENT_DISCOUNT @join__enumValue(graph: BOOKING)
+  FIXED_DISCOUNT @join__enumValue(graph: BOOKING)
+  PERCENT_SURCHARGE @join__enumValue(graph: BOOKING)
+  FIXED_SURCHARGE @join__enumValue(graph: BOOKING)
+}
+
+enum PricingChannel
+  @join__type(graph: BOOKING)
+{
+  ADMIN_PORTAL @join__enumValue(graph: BOOKING)
+  CUSTOMER_WEB @join__enumValue(graph: BOOKING)
+  OTA @join__enumValue(graph: BOOKING)
+}
+
+type PricingRuleVersion
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  code: String!
+  name: String!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  priority: Int!
+  daysOfWeek: [Int!]!
+  channels: [PricingChannel!]!
+  minimumStayDays: Int
+  maximumStayDays: Int
+  minimumGuests: Int
+  maximumGuests: Int
+  actionType: PricingActionType!
+  actionValue: String!
+}
+
+input PricingRuleVersionInput
+  @join__type(graph: BOOKING)
+{
+  code: String!
+  name: String!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  priority: Int!
+  daysOfWeek: [Int!]! = []
+  channels: [PricingChannel!]! = []
+  minimumStayDays: Int
+  maximumStayDays: Int
+  minimumGuests: Int
+  maximumGuests: Int
+  actionType: PricingActionType!
+  actionValue: String!
+}
+
+type PropertyRateProfileVersion
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  propertyId: ID!
+  version: Int!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  baseDailyRate: String!
+  mediumDailyFactorBps: Int!
+  longDailyFactorBps: Int!
+  currency: String!
+  checkInTime: String!
+  checkOutTime: String!
+  turnoverMinutes: Int!
+  quoteTtlMinutes: Int!
+  commissionDefaultBps: Int!
+  commissionMaxBps: Int!
+  reason: String!
+  authoredByAdminAccountId: ID!
+  correlationId: String
+  authoredAt: String!
+  rules: [PricingRuleVersion!]!
+}
+
 type Query
   @join__type(graph: BOOKING)
   @join__type(graph: NOTIFICATION)
@@ -315,6 +418,8 @@ type Query
 {
   booking(id: ID!): Booking! @join__field(graph: BOOKING) @authenticated
   bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
+  propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
+  propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @join__field(graph: BOOKING) @authenticated
   paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
   myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
