@@ -1,0 +1,431 @@
+{
+  "info": {
+    "_postman_id": "5d567d4c-b451-46df-95ac-080bd21b4a1b",
+    "name": "ViStay Inventory Block Commands",
+    "description": "Ordered, opt-in SCRUM-359 flow. It observes one disposable property revision, creates and releases one operator block, proves durable replay and negative cases, and never exposes command-only block identity through the read-only observation collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "let payload = null;",
+          "try { payload = pm.response.json(); } catch (ignored) { payload = null; }",
+          "if (payload) {",
+          "  const forbiddenKeys = new Set(['bookingId', 'holdId', 'channelExternalBlockId', 'channelExternalReference', 'externalBlockReference', 'externalReference', 'notes', 'actorId', 'actorAccountId', 'actorProfileId', 'guestId', 'guestName', 'customerId', 'customerName', 'hostId', 'hostName', 'totalAmount', 'commercialAmount', 'credential', 'credentials', 'accessToken', 'refreshToken', 'authorizationEvidence']);",
+          "  const found = [];",
+          "  const visit = (value) => {",
+          "    if (Array.isArray(value)) { value.forEach(visit); return; }",
+          "    if (!value || typeof value !== 'object') { return; }",
+          "    Object.entries(value).forEach(([key, child]) => { if (forbiddenKeys.has(key)) { found.push(key); } visit(child); });",
+          "  };",
+          "  visit(payload);",
+          "  pm.test('command response exposes no unrelated private fields', () => pm.expect(found).to.eql([]));",
+          "  const errorText = JSON.stringify(payload.errors || []);",
+          "  pm.test('errors expose no dependency address, SQL, bearer token, or secret', () => {",
+          "    pm.expect(errorText).not.to.match(/(?:jdbc:|postgres(?:ql)?:|https?:\\/\\/|bearer\\s+|select\\s+.+\\s+from|insert\\s+into|update\\s+.+\\s+set|delete\\s+from|password|client_secret)/i);",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Ordered create and release flow",
+      "description": "Run this folder in order against one disposable mapped property and an empty future range. A denied-token request deliberately carries a stale revision so an authorization regression still cannot mutate inventory.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runInventoryCommandFlow') !== 'true') {",
+              "  pm.execution.skipRequest();",
+              "} else {",
+              "  for (const key of ['inventoryCommandAccessToken', 'inventoryCommandForbiddenAccessToken', 'inventoryCommandPropertyId', 'inventoryCommandStartDate', 'inventoryCommandEndDateExclusive']) {",
+              "    if (!pm.environment.get(key)) { throw new Error(`Inventory command flow requires ${key}.`); }",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Observe command property revision",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const guid = () => pm.variables.replaceIn('{{$guid}}').toLowerCase();",
+                  "pm.environment.set('inventoryCommandCreateIdempotencyKey', `inventory-create:${guid()}`);",
+                  "pm.environment.set('inventoryCommandCreateCorrelationId', guid());",
+                  "pm.environment.set('inventoryCommandStaleIdempotencyKey', `inventory-stale:${guid()}`);",
+                  "pm.environment.set('inventoryCommandStaleCorrelationId', guid());",
+                  "pm.environment.set('inventoryCommandReleaseIdempotencyKey', `inventory-release:${guid()}`);",
+                  "pm.environment.set('inventoryCommandReleaseCorrelationId', guid());",
+                  "pm.environment.set('inventoryCommandForbiddenIdempotencyKey', `inventory-forbidden:${guid()}`);",
+                  "pm.environment.set('inventoryCommandForbiddenCorrelationId', guid());",
+                  "pm.environment.set('inventoryCommandValidationIdempotencyKey', `inventory-validation:${guid()}`);",
+                  "pm.environment.set('inventoryCommandValidationCorrelationId', guid());",
+                  "for (const key of ['inventoryCommandInitialRevision', 'inventoryCommandBranchId', 'inventoryCommandMembershipVersion', 'inventoryCommandCreateSnapshot', 'inventoryCommandBlockId', 'inventoryCommandCreatedRevision', 'inventoryCommandCreatedBlockVersion', 'inventoryCommandReleaseSnapshot', 'inventoryCommandReleasedRevision']) { pm.environment.set(key, ''); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const value = payload.data && payload.data.propertyAvailability;",
+                  "pm.test('disposable command range is available with authoritative revision evidence', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(value.propertyId).to.eql(pm.environment.get('inventoryCommandPropertyId'));",
+                  "  pm.expect(value.available).to.eql(true);",
+                  "  pm.expect(value.overlaps).to.eql([]);",
+                  "  pm.expect(value.inventoryRevision).to.match(/^(0|[1-9]\\d*)$/);",
+                  "  pm.expect(value.branchId).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(value.propertyMembershipVersion).to.match(/^(0|[1-9]\\d*)$/);",
+                  "});",
+                  "if (value) {",
+                  "  pm.environment.set('inventoryCommandInitialRevision', value.inventoryRevision);",
+                  "  pm.environment.set('inventoryCommandBranchId', value.branchId);",
+                  "  pm.environment.set('inventoryCommandMembershipVersion', value.propertyMembershipVersion);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query InventoryCommandAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"checkInDate\":\"{{inventoryCommandStartDate}}\",\"checkOutDate\":\"{{inventoryCommandEndDateExclusive}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Create active maintenance block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const value = payload.data && payload.data.createInventoryBlock;",
+                  "const expectedFields = ['action', 'blockType', 'blockVersion', 'branchId', 'commandId', 'endDateExclusive', 'idempotencyKey', 'inventoryBlockId', 'inventoryRevision', 'occurredAt', 'propertyId', 'propertyMembershipVersion', 'releasedAt', 'requestHash', 'startDate', 'status'];",
+                  "pm.test('create returns complete immutable command outcome', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(Object.keys(value).sort()).to.eql(expectedFields);",
+                  "  pm.expect(value.commandId).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(value.inventoryBlockId).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(value.idempotencyKey).to.eql(pm.environment.get('inventoryCommandCreateIdempotencyKey'));",
+                  "  pm.expect(value.requestHash).to.match(/^[0-9a-f]{64}$/);",
+                  "  pm.expect(value.action).to.eql('CREATED');",
+                  "  pm.expect(value.blockType).to.eql('MAINTENANCE');",
+                  "  pm.expect(value.status).to.eql('ACTIVE');",
+                  "  pm.expect(value.propertyId).to.eql(pm.environment.get('inventoryCommandPropertyId'));",
+                  "  pm.expect(value.startDate).to.eql(pm.environment.get('inventoryCommandStartDate'));",
+                  "  pm.expect(value.endDateExclusive).to.eql(pm.environment.get('inventoryCommandEndDateExclusive'));",
+                  "  pm.expect(value.branchId).to.eql(pm.environment.get('inventoryCommandBranchId'));",
+                  "  pm.expect(value.propertyMembershipVersion).to.eql(pm.environment.get('inventoryCommandMembershipVersion'));",
+                  "  pm.expect(value.blockVersion).to.match(/^(0|[1-9]\\d*)$/);",
+                  "  pm.expect(BigInt(value.inventoryRevision)).to.eql(BigInt(pm.environment.get('inventoryCommandInitialRevision')) + 1n);",
+                  "  pm.expect(value.occurredAt).to.match(/^\\d{4}-\\d{2}-\\d{2}T.*Z$/);",
+                  "  pm.expect(value.releasedAt).to.eql(null);",
+                  "});",
+                  "if (value) {",
+                  "  pm.environment.set('inventoryCommandCreateSnapshot', JSON.stringify(value));",
+                  "  pm.environment.set('inventoryCommandBlockId', value.inventoryBlockId);",
+                  "  pm.environment.set('inventoryCommandCreatedRevision', value.inventoryRevision);",
+                  "  pm.environment.set('inventoryCommandCreatedBlockVersion', value.blockVersion);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandCreateCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreateInventoryBlock($input: CreateInventoryBlockInput!) { createInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandCreateIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"blockType\":\"MAINTENANCE\",\"startDate\":\"{{inventoryCommandStartDate}}\",\"endDateExclusive\":\"{{inventoryCommandEndDateExclusive}}\",\"expectedInventoryRevision\":\"{{inventoryCommandInitialRevision}}\",\"reason\":\"Postman validates an idempotent operator inventory block command\",\"correlationId\":\"{{inventoryCommandCreateCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Replay exact create command",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const value = payload.data && payload.data.createInventoryBlock;",
+                  "pm.test('exact create replay returns the original complete outcome', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(value).to.eql(JSON.parse(pm.environment.get('inventoryCommandCreateSnapshot')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandCreateCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreateInventoryBlock($input: CreateInventoryBlockInput!) { createInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandCreateIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"blockType\":\"MAINTENANCE\",\"startDate\":\"{{inventoryCommandStartDate}}\",\"endDateExclusive\":\"{{inventoryCommandEndDateExclusive}}\",\"expectedInventoryRevision\":\"{{inventoryCommandInitialRevision}}\",\"reason\":\"Postman validates an idempotent operator inventory block command\",\"correlationId\":\"{{inventoryCommandCreateCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Reject changed payload for create key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('changed payload cannot reuse the create key', () => {",
+                  "  pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('IDEMPOTENCY_KEY_REUSED');",
+                  "  pm.expect(payload.data && payload.data.createInventoryBlock).to.not.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandCreateCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreateInventoryBlock($input: CreateInventoryBlockInput!) { createInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandCreateIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"blockType\":\"MAINTENANCE\",\"startDate\":\"{{inventoryCommandStartDate}}\",\"endDateExclusive\":\"{{inventoryCommandEndDateExclusive}}\",\"expectedInventoryRevision\":\"{{inventoryCommandInitialRevision}}\",\"reason\":\"Postman deliberately changes the reason for idempotency rejection\",\"correlationId\":\"{{inventoryCommandCreateCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Reject stale inventory revision",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('new command cannot use the pre-create revision', () => {",
+                  "  pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('STALE_INVENTORY_REVISION');",
+                  "  pm.expect(payload.data && payload.data.createInventoryBlock).to.not.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandStaleCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreateInventoryBlock($input: CreateInventoryBlockInput!) { createInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandStaleIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"blockType\":\"MAINTENANCE\",\"startDate\":\"{{inventoryCommandStartDate}}\",\"endDateExclusive\":\"{{inventoryCommandEndDateExclusive}}\",\"expectedInventoryRevision\":\"{{inventoryCommandInitialRevision}}\",\"reason\":\"Postman proves optimistic inventory revision rejection is stable\",\"correlationId\":\"{{inventoryCommandStaleCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Release active maintenance block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const value = payload.data && payload.data.releaseInventoryBlock;",
+                  "pm.test('release returns the next immutable command outcome', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(value.action).to.eql('RELEASED');",
+                  "  pm.expect(value.status).to.eql('RELEASED');",
+                  "  pm.expect(value.blockType).to.eql('MAINTENANCE');",
+                  "  pm.expect(value.inventoryBlockId).to.eql(pm.environment.get('inventoryCommandBlockId'));",
+                  "  pm.expect(value.idempotencyKey).to.eql(pm.environment.get('inventoryCommandReleaseIdempotencyKey'));",
+                  "  pm.expect(value.requestHash).to.match(/^[0-9a-f]{64}$/);",
+                  "  pm.expect(BigInt(value.blockVersion)).to.eql(BigInt(pm.environment.get('inventoryCommandCreatedBlockVersion')) + 1n);",
+                  "  pm.expect(BigInt(value.inventoryRevision)).to.eql(BigInt(pm.environment.get('inventoryCommandCreatedRevision')) + 1n);",
+                  "  pm.expect(value.releasedAt).to.eql(value.occurredAt);",
+                  "});",
+                  "if (value) {",
+                  "  pm.environment.set('inventoryCommandReleaseSnapshot', JSON.stringify(value));",
+                  "  pm.environment.set('inventoryCommandReleasedRevision', value.inventoryRevision);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandReleaseCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ReleaseInventoryBlock($input: ReleaseInventoryBlockInput!) { releaseInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandReleaseIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"inventoryBlockId\":\"{{inventoryCommandBlockId}}\",\"expectedInventoryRevision\":\"{{inventoryCommandCreatedRevision}}\",\"reason\":\"Postman validates an idempotent operator inventory block release\",\"correlationId\":\"{{inventoryCommandReleaseCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Replay exact release command",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const value = payload.data && payload.data.releaseInventoryBlock;",
+                  "pm.test('exact release replay returns the original complete outcome', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(value).to.eql(JSON.parse(pm.environment.get('inventoryCommandReleaseSnapshot')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandReleaseCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ReleaseInventoryBlock($input: ReleaseInventoryBlockInput!) { releaseInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandReleaseIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"inventoryBlockId\":\"{{inventoryCommandBlockId}}\",\"expectedInventoryRevision\":\"{{inventoryCommandCreatedRevision}}\",\"reason\":\"Postman validates an idempotent operator inventory block release\",\"correlationId\":\"{{inventoryCommandReleaseCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Forbidden role cannot create block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('role without inventory block authority fails before stale CAS', () => {",
+                  "  pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVENTORY_BLOCK_FORBIDDEN');",
+                  "  pm.expect(payload.data && payload.data.createInventoryBlock).to.not.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandForbiddenAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandForbiddenCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreateInventoryBlock($input: CreateInventoryBlockInput!) { createInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandForbiddenIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"blockType\":\"MAINTENANCE\",\"startDate\":\"{{inventoryCommandStartDate}}\",\"endDateExclusive\":\"{{inventoryCommandEndDateExclusive}}\",\"expectedInventoryRevision\":\"{{inventoryCommandInitialRevision}}\",\"reason\":\"Postman proves a forbidden role cannot mutate branch inventory\",\"correlationId\":\"{{inventoryCommandForbiddenCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Equal command dates are invalid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('invalid half-open command range performs no write', () => {",
+                  "  pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVALID_INVENTORY_RANGE');",
+                  "  pm.expect(payload.data && payload.data.createInventoryBlock).to.not.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryCommandAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "inventory-command" },
+              { "key": "X-Request-ID", "value": "{{inventoryCommandValidationCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreateInventoryBlock($input: CreateInventoryBlockInput!) { createInventoryBlock(input: $input) { commandId idempotencyKey requestHash inventoryBlockId action propertyId blockType status startDate endDateExclusive blockVersion inventoryRevision branchId propertyMembershipVersion occurredAt releasedAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{inventoryCommandValidationIdempotencyKey}}\",\"propertyId\":\"{{inventoryCommandPropertyId}}\",\"blockType\":\"MAINTENANCE\",\"startDate\":\"{{inventoryCommandStartDate}}\",\"endDateExclusive\":\"{{inventoryCommandStartDate}}\",\"expectedInventoryRevision\":\"{{inventoryCommandReleasedRevision}}\",\"reason\":\"Postman proves an empty inventory command range is rejected\",\"correlationId\":\"{{inventoryCommandValidationCorrelationId}}\"}}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -210,6 +210,14 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             throw "Kafka bootstrap is missing pricing publication contract '$pricingPublicationContract'."
         }
     }
+    foreach ($inventoryBlockContract in @(
+        'create_topic vistay.booking.inventory-block-changed.v1',
+        'grant_producer vistay-booking vistay.booking.inventory-block-changed.v1'
+    )) {
+        if (-not $kafkaInitializer.Contains($inventoryBlockContract)) {
+            throw "Kafka bootstrap is missing inventory block contract '$inventoryBlockContract'."
+        }
+    }
 
     $user = $configuration.services.user
     foreach ($expected in @(
@@ -300,6 +308,10 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         if ($configuration.services.booking.environment.RATE_PROFILE_PUBLISHED_TOPIC -ne
             'vistay.booking.rate-profile-published.v1') {
             throw 'Booking must publish the versioned rate-profile-published topic.'
+        }
+        if ($configuration.services.booking.environment.INVENTORY_BLOCK_CHANGED_TOPIC -ne
+            'vistay.booking.inventory-block-changed.v1') {
+            throw 'Booking must publish the versioned inventory-block-changed topic.'
         }
         $bookingGrpcMount = @($configuration.services.booking.volumes |
             Where-Object target -eq '/run/secrets/grpc')

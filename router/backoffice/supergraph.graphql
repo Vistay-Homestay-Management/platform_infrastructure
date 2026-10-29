@@ -187,6 +187,19 @@ input CancelPaymentIntentInput
   reason: String!
 }
 
+input CreateInventoryBlockInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  propertyId: ID!
+  blockType: OperatorInventoryBlockType!
+  startDate: String!
+  endDateExclusive: String!
+  expectedInventoryRevision: String!
+  reason: String!
+  correlationId: String!
+}
+
 input CreatePropertyPriceQuoteSnapshotInput
   @join__type(graph: BOOKING)
 {
@@ -264,6 +277,34 @@ type InventoryAvailabilityOverlap
   channelProvider: String
 }
 
+enum InventoryBlockCommandAction
+  @join__type(graph: BOOKING)
+{
+  CREATED @join__enumValue(graph: BOOKING)
+  RELEASED @join__enumValue(graph: BOOKING)
+}
+
+type InventoryBlockCommandResult
+  @join__type(graph: BOOKING)
+{
+  commandId: ID!
+  idempotencyKey: String!
+  requestHash: String!
+  inventoryBlockId: ID!
+  action: InventoryBlockCommandAction!
+  propertyId: ID!
+  blockType: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  blockVersion: String!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+  occurredAt: String!
+  releasedAt: String
+}
+
 enum InventoryBlockStatus
   @join__type(graph: BOOKING)
 {
@@ -314,6 +355,8 @@ type Mutation
   @join__type(graph: PAYMENT)
   @join__type(graph: USER)
 {
+  createInventoryBlock(input: CreateInventoryBlockInput!): InventoryBlockCommandResult! @join__field(graph: BOOKING) @authenticated
+  releaseInventoryBlock(input: ReleaseInventoryBlockInput!): InventoryBlockCommandResult! @join__field(graph: BOOKING) @authenticated
   createPropertyRateProfileVersion(input: CreatePropertyRateProfileVersionInput!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
   applyPropertyPriceOverride(input: ApplyPropertyPriceOverrideInput!): AppliedPropertyPriceOverride! @join__field(graph: BOOKING) @authenticated
   publishPropertyRateProfileVersion(input: PublishPropertyRateProfileVersionInput!): PricingProfilePublication! @join__field(graph: BOOKING) @authenticated
@@ -361,6 +404,15 @@ type NotificationStreamEvent
 {
   cursor: Cursor!
   notification: Notification!
+}
+
+enum OperatorInventoryBlockType
+  @join__type(graph: BOOKING)
+{
+  MAINTENANCE @join__enumValue(graph: BOOKING)
+  CLEANING @join__enumValue(graph: BOOKING)
+  OWNER_USE @join__enumValue(graph: BOOKING)
+  MANUAL @join__enumValue(graph: BOOKING)
 }
 
 type PaymentIntent
@@ -784,6 +836,17 @@ input ReduceAuthorizationScopesInput
   retainedScopes: [RetainedPermissionScopesInput!]!
   reason: String!
   expectedAuthorizationVersion: Int!
+}
+
+input ReleaseInventoryBlockInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  propertyId: ID!
+  inventoryBlockId: ID!
+  expectedInventoryRevision: String!
+  reason: String!
+  correlationId: String!
 }
 
 input RequestAuthorizationChangeInput

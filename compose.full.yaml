@@ -162,6 +162,7 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-booking" password="${KAFKA_BOOKING_PASSWORD}";
       RATE_PROFILE_PUBLISHED_TOPIC: vistay.booking.rate-profile-published.v1
+      INVENTORY_BLOCK_CHANGED_TOPIC: vistay.booking.inventory-block-changed.v1
       USER_GRPC_ADDRESS: static://user:9090
       USER_GRPC_SSL_BUNDLE: grpc-user-client
       PROPERTY_GRPC_ADDRESS: static://property:9090

@@ -6,6 +6,7 @@ Import these files into Postman:
 - `ViStay-Authorization.postman_collection.json`
 - `ViStay-Pricing.postman_collection.json`
 - `ViStay-Inventory.postman_collection.json`
+- `ViStay-Inventory-Commands.postman_collection.json`
 - `ViStay-Local.postman_environment.json`
 
 Select the **ViStay Local** environment before sending requests.
@@ -50,6 +51,7 @@ Enable an optional group only after supplying its required variables:
 | `runInventoryValidationScenarios=true` | Verify invalid ranges and missing/unmapped property failures | `inventoryAccessToken`, an available fixture, and an intentionally unmapped Property fixture |
 | `runInventoryAuthorizationScenarios=true` | Verify unauthenticated, foreign-branch, revoked, and scope-without-partition denial | Dedicated empty/revoked/foreign-branch tokens and fixture assignments described below |
 | `runInventoryDependencyScenarios=true` | Verify Property and User/Authorization fail-closed errors | Run one request while only its named local dependency is stopped; restore it immediately |
+| `runInventoryCommandFlow=true` | Observe, create/replay, reject stale/reused/forbidden/invalid commands, then release/replay one block | Disposable mapped property/range plus distinct allowed and forbidden Backoffice tokens described below |
 
 Never commit populated secret values or an exported environment containing
 tokens.
@@ -318,6 +320,58 @@ type/status/range/provider. It must never expose an inventory/block ID,
 booking/hold ID, external channel reference, reason/notes, identity/PII,
 commercial amount, credential, raw authorization evidence, dependency address,
 or SQL text.
+
+## Idempotent inventory block command flow
+
+`ViStay-Inventory-Commands.postman_collection.json` is deliberately separate
+from the read-only observation collection. SCRUM-359 command results return the
+opaque block and command IDs needed for an exact release/replay; adding those
+fields to the observation collection would violate its privacy contract.
+
+The command collection is checked in with `runInventoryCommandFlow=false`, empty
+tokens, an empty property ID, and empty command evidence. CI validates its exact
+GraphQL inputs/selections, ordering, safe negative cases, environment hygiene,
+and JavaScript assertions. CI does not claim that the optional flow ran against
+a live stack.
+
+Use only a disposable local property that has an active Property-to-Branch
+membership and no overlap in the configured future range. Set:
+
+- `inventoryCommandPropertyId` to that exact unit;
+- `inventoryCommandAccessToken` to an active `SUPER_ADMIN` with explicit `ALL`,
+  or a `MANAGER` with both `inventory:read`, `inventory:block`, and the exact
+  current `BRANCH` partition;
+- `inventoryCommandForbiddenAccessToken` to an authenticated role without
+  `inventory:block` (do not reuse the powerful token); and
+- optionally adjust `inventoryCommandStartDate` and
+  `inventoryCommandEndDateExclusive` to another empty half-open range.
+
+Then set `runInventoryCommandFlow=true` and run **01 Ordered create and release
+flow** from the first request. The first request generates fresh UUID-based keys
+and correlations and observes revision zero or the current positive revision.
+The remaining requests, in order:
+
+1. create one `MAINTENANCE/ACTIVE` block with the observed revision;
+2. replay the exact create body and compare the complete stored outcome;
+3. change a hashed reason under the same key and require
+   `IDEMPOTENCY_KEY_REUSED`;
+4. use a new key with the pre-create revision and require
+   `STALE_INVENTORY_REVISION`;
+5. release the exact block with the create revision;
+6. replay the exact release body and compare the complete stored outcome;
+7. prove the forbidden role fails before revision comparison; and
+8. reject an empty half-open date range.
+
+The forbidden-role request intentionally carries the stale pre-create revision.
+If authorization ever regresses, optimistic concurrency still prevents that
+negative request from writing data. The validation request is malformed before
+the write boundary. The successful flow finishes with the created block in
+`RELEASED`; it never hard-deletes audit evidence or uses direct SQL as cleanup.
+
+Run the folder, not isolated requests: later requests depend on revision, block,
+and immutable-response evidence captured earlier. The first request creates new
+keys for each full run. Return the flag to `false` afterwards, and never export or
+commit populated tokens, IDs, snapshots, idempotency keys, or correlations.
 
 ## Payment activation
 
