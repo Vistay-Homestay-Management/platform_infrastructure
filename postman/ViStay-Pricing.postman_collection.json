@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "4e471f5e-72cb-48d7-b772-d5035038043e",
-    "name": "ViStay Pricing Authoring",
-    "description": "Opt-in SCRUM-354 pricing-profile authoring flow. The collection creates one immutable property pricing version, proves exact idempotent replay, exercises validation and authorization denial, then reads the authored version. Clear pricingIdempotencyKey before intentionally changing the happy-path payload.",
+    "name": "ViStay Pricing",
+    "description": "Opt-in SCRUM-354 immutable authoring plus SCRUM-355 deterministic quote calculation and explanation. Calculation always names an immutable profile version and never publishes, overrides or persists a quote.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -11,12 +11,11 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "if (pm.environment.get('runPricingAuthoring') !== 'true') {",
-          "  pm.execution.skipRequest();",
-          "}",
-          "for (const key of ['pricingIdempotencyKey', 'pricingInvalidCommissionIdempotencyKey', 'pricingInvalidRuleIdempotencyKey', 'pricingDeniedIdempotencyKey']) {",
-          "  if (!pm.environment.get(key)) {",
-          "    pm.environment.set(key, pm.variables.replaceIn('pricing-v1-{{$guid}}'));",
+          "if (pm.environment.get('runPricingAuthoring') === 'true') {",
+          "  for (const key of ['pricingIdempotencyKey', 'pricingInvalidCommissionIdempotencyKey', 'pricingInvalidRuleIdempotencyKey', 'pricingDeniedIdempotencyKey']) {",
+          "    if (!pm.environment.get(key)) {",
+          "      pm.environment.set(key, pm.variables.replaceIn('pricing-v1-{{$guid}}'));",
+          "    }",
           "  }",
           "}"
         ]
@@ -26,6 +25,19 @@
   "item": [
     {
       "name": "01 Author immutable pricing version",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runPricingAuthoring') !== 'true') {",
+              "  pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        }
+      ],
       "item": [
         {
           "name": "Create property pricing version",
@@ -202,6 +214,19 @@
     },
     {
       "name": "02 Read pricing versions",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runPricingAuthoring') !== 'true') {",
+              "  pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        }
+      ],
       "item": [
         {
           "name": "Read authored pricing version",
@@ -263,6 +288,317 @@
                   "  const authored = payload.data.propertyRateProfileVersions.find(item => item.id === pm.environment.get('pricingVersionId'));",
                   "  pm.expect(authored).to.not.eql(undefined);",
                   "  pm.expect(JSON.stringify(authored)).to.eql(pm.environment.get('pricingCreatedSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Calculate and explain deterministic quotes",
+      "description": "SCRUM-355 evaluates an explicitly selected immutable profile version. These queries do not publish pricing, apply a manual override, create a quote record, or persist a booking snapshot.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runPricingCalculation') !== 'true') {",
+              "  pm.execution.skipRequest();",
+              "}",
+              "if (!pm.environment.get('pricingVersionId') || !pm.environment.get('pricingPropertyId')) {",
+              "  throw new Error('Run the SCRUM-354 authoring request first and retain pricingVersionId/pricingPropertyId.');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Calculate SHORT quote with explanation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query CalculatePriceQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint calculationVersion roundingPolicy rateProfileVersionId propertyId profileVersion checkInDate checkOutDate guestCount channel staffCreated stayProduct stayDays baseDailyRate dailyFactorBps productDailyRate baseLodgingAmount lodgingBeforeAdjustments discountAmount surchargeAmount lodgingAmount requestedCommissionBps commissionDefaultBps commissionMaxBps commissionBaseAmount commissionBps commissionAmount totalAmount currency precedence evaluatedRules { order chargeDate ruleId code priority status reason actionType actionValue beforeAmount adjustmentAmount afterAmount } components { order type code chargeDate ruleCode quantity unitAmount factorBps amount } } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const quote = payload.data && payload.data.calculatePropertyPriceQuote;",
+                  "pm.test('SHORT quote uses the immutable v1 calculation contract', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(quote.fingerprint).to.match(/^[0-9a-f]{64}$/);",
+                  "  pm.expect(quote.calculationVersion).to.eql('PRICING_V1');",
+                  "  pm.expect(quote.roundingPolicy).to.eql('HALF_UP_WHOLE_VND_PER_COMPONENT');",
+                  "  pm.expect(quote.rateProfileVersionId).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(quote.propertyId).to.eql(pm.environment.get('pricingPropertyId'));",
+                  "  pm.expect(String(quote.profileVersion)).to.eql(pm.environment.get('pricingVersionNumber'));",
+                  "  pm.expect(quote.stayProduct).to.eql('SHORT');",
+                  "  pm.expect(quote.stayDays).to.eql(3);",
+                  "  pm.expect(quote.dailyFactorBps).to.eql(10000);",
+                  "  pm.expect(quote.currency).to.eql('VND');",
+                  "});",
+                  "pm.test('SHORT quote explains weekend rule precedence and every amount', () => {",
+                  "  pm.expect(quote.baseDailyRate).to.eql('1000000');",
+                  "  pm.expect(quote.productDailyRate).to.eql('1000000');",
+                  "  pm.expect(quote.baseLodgingAmount).to.eql('3000000');",
+                  "  pm.expect(quote.lodgingBeforeAdjustments).to.eql('3000000');",
+                  "  pm.expect(quote.discountAmount).to.eql('0');",
+                  "  pm.expect(quote.surchargeAmount).to.eql('200000');",
+                  "  pm.expect(quote.lodgingAmount).to.eql('3200000');",
+                  "  pm.expect(quote.requestedCommissionBps).to.eql(500);",
+                  "  pm.expect(quote.commissionDefaultBps).to.eql(500);",
+                  "  pm.expect(quote.commissionMaxBps).to.eql(2000);",
+                  "  pm.expect(quote.commissionBaseAmount).to.eql('3200000');",
+                  "  pm.expect(quote.commissionBps).to.eql(500);",
+                  "  pm.expect(quote.commissionAmount).to.eql('160000');",
+                  "  pm.expect(quote.totalAmount).to.eql('3360000');",
+                  "  pm.expect(quote.precedence).to.have.lengthOf(3);",
+                  "  pm.expect(quote.precedence[0]).to.include('FIXED_DAILY_RATE');",
+                  "  pm.expect(quote.evaluatedRules.filter(rule => rule.status === 'MATCHED')).to.have.lengthOf(2);",
+                  "  pm.expect(quote.evaluatedRules.filter(rule => rule.status === 'SKIPPED' && rule.reason === 'WEEKDAY_MISMATCH')).to.have.lengthOf(1);",
+                  "  pm.expect(quote.components.some(component => component.type === 'RULE_SURCHARGE')).to.eql(true);",
+                  "  pm.expect(quote.components.reduce((sum, component) => sum + Number(component.amount), 0)).to.eql(Number(quote.totalAmount));",
+                  "});",
+                  "if (quote) {",
+                  "  pm.environment.set('pricingQuoteShortFingerprint', quote.fingerprint);",
+                  "  pm.environment.set('pricingQuoteShortTotal', quote.totalAmount);",
+                  "  pm.environment.set('pricingQuoteShortSnapshot', JSON.stringify(quote));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay identical SHORT quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query CalculatePriceQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint calculationVersion roundingPolicy rateProfileVersionId propertyId profileVersion checkInDate checkOutDate guestCount channel staffCreated stayProduct stayDays baseDailyRate dailyFactorBps productDailyRate baseLodgingAmount lodgingBeforeAdjustments discountAmount surchargeAmount lodgingAmount requestedCommissionBps commissionDefaultBps commissionMaxBps commissionBaseAmount commissionBps commissionAmount totalAmount currency precedence evaluatedRules { order chargeDate ruleId code priority status reason actionType actionValue beforeAmount adjustmentAmount afterAmount } components { order type code chargeDate ruleCode quantity unitAmount factorBps amount } } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const quote = payload.data && payload.data.calculatePropertyPriceQuote;",
+                  "pm.test('identical normalized input is deterministic', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(quote.fingerprint).to.eql(pm.environment.get('pricingQuoteShortFingerprint'));",
+                  "  pm.expect(quote.totalAmount).to.eql(pm.environment.get('pricingQuoteShortTotal'));",
+                  "  pm.expect(JSON.stringify(quote)).to.eql(pm.environment.get('pricingQuoteShortSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Calculate MEDIUM quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query CalculateMediumQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint calculationVersion roundingPolicy rateProfileVersionId propertyId profileVersion stayProduct stayDays baseDailyRate dailyFactorBps productDailyRate baseLodgingAmount lodgingBeforeAdjustments discountAmount surchargeAmount lodgingAmount requestedCommissionBps commissionDefaultBps commissionMaxBps commissionBaseAmount commissionBps commissionAmount totalAmount currency precedence evaluatedRules { status reason code } components { type quantity unitAmount factorBps amount } } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteMediumCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteMediumCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const quote = payload.data && payload.data.calculatePropertyPriceQuote;",
+                  "pm.test('MEDIUM uses the 70 percent daily factor for all 31 days', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(quote.calculationVersion).to.eql('PRICING_V1');",
+                  "  pm.expect(quote.roundingPolicy).to.eql('HALF_UP_WHOLE_VND_PER_COMPONENT');",
+                  "  pm.expect(quote.stayProduct).to.eql('MEDIUM');",
+                  "  pm.expect(quote.stayDays).to.eql(31);",
+                  "  pm.expect(quote.dailyFactorBps).to.eql(7000);",
+                  "  pm.expect(quote.productDailyRate).to.eql('700000');",
+                  "  pm.expect(quote.baseLodgingAmount).to.eql('31000000');",
+                  "  pm.expect(quote.lodgingAmount).to.eql('21700000');",
+                  "  pm.expect(quote.commissionBaseAmount).to.eql('21700000');",
+                  "  pm.expect(quote.commissionAmount).to.eql('1085000');",
+                  "  pm.expect(quote.totalAmount).to.eql('22785000');",
+                  "  pm.expect(quote.evaluatedRules).to.have.lengthOf(1);",
+                  "  pm.expect(quote.evaluatedRules.every(rule => rule.status === 'SKIPPED' && rule.reason === 'STAY_PRODUCT_NOT_SHORT')).to.eql(true);",
+                  "  pm.expect(quote.components.some(component => component.type === 'RULE_DISCOUNT' || component.type === 'RULE_SURCHARGE')).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Calculate LONG quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query CalculateLongQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint calculationVersion roundingPolicy rateProfileVersionId propertyId profileVersion stayProduct stayDays baseDailyRate dailyFactorBps productDailyRate baseLodgingAmount lodgingBeforeAdjustments discountAmount surchargeAmount lodgingAmount requestedCommissionBps commissionDefaultBps commissionMaxBps commissionBaseAmount commissionBps commissionAmount totalAmount currency precedence evaluatedRules { status reason code } components { type quantity unitAmount factorBps amount } } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteLongCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteLongCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const quote = payload.data && payload.data.calculatePropertyPriceQuote;",
+                  "pm.test('LONG uses the 55 percent daily factor at one calendar year', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(quote.calculationVersion).to.eql('PRICING_V1');",
+                  "  pm.expect(quote.roundingPolicy).to.eql('HALF_UP_WHOLE_VND_PER_COMPONENT');",
+                  "  pm.expect(quote.stayProduct).to.eql('LONG');",
+                  "  pm.expect(quote.stayDays).to.eql(365);",
+                  "  pm.expect(quote.dailyFactorBps).to.eql(5500);",
+                  "  pm.expect(quote.productDailyRate).to.eql('550000');",
+                  "  pm.expect(quote.baseLodgingAmount).to.eql('365000000');",
+                  "  pm.expect(quote.lodgingAmount).to.eql('200750000');",
+                  "  pm.expect(quote.commissionBaseAmount).to.eql('200750000');",
+                  "  pm.expect(quote.commissionAmount).to.eql('10037500');",
+                  "  pm.expect(quote.totalAmount).to.eql('210787500');",
+                  "  pm.expect(quote.evaluatedRules).to.have.lengthOf(1);",
+                  "  pm.expect(quote.evaluatedRules.every(rule => rule.status === 'SKIPPED' && rule.reason === 'STAY_PRODUCT_NOT_SHORT')).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject zero-night quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query InvalidPriceQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckIn}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":false}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('checkout must be after check-in', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.data).to.eql(null);",
+                  "  pm.expect(payload.errors[0].extensions.code).to.eql('INVALID_STAY_RANGE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject profile property mismatch",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query MismatchedPriceQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingQuoteOtherPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":false}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('profile cannot price another property', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.data).to.eql(null);",
+                  "  pm.expect(payload.errors[0].extensions.code).to.eql('PRICING_PROFILE_PROPERTY_MISMATCH');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anonymous caller cannot calculate quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query AnonymousPriceQuote($input: CalculatePropertyPriceQuoteInput!) { calculatePropertyPriceQuote(input: $input) { fingerprint } }\",\"variables\":{\"input\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":false}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('router rejects unauthenticated pricing calculation', () => {",
+                  "  pm.response.to.have.status(401);",
                   "});"
                 ]
               }

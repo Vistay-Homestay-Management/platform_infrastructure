@@ -143,6 +143,19 @@ type Booking
   currency: String!
 }
 
+input CalculatePropertyPriceQuoteInput
+  @join__type(graph: BOOKING)
+{
+  rateProfileVersionId: ID!
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+  guestCount: Int! = 1
+  channel: PricingChannel!
+  staffCreated: Boolean! = false
+  commissionBps: Int
+}
+
 input CancelPaymentIntentInput
   @join__type(graph: PAYMENT)
 {
@@ -330,6 +343,31 @@ type PersonalProfile
   replayed: Boolean!
 }
 
+type PriceComponent
+  @join__type(graph: BOOKING)
+{
+  order: Int!
+  type: PriceComponentType!
+  code: String!
+  chargeDate: String
+  ruleCode: String
+  quantity: Int!
+  unitAmount: String!
+  factorBps: Int
+  amount: String!
+}
+
+enum PriceComponentType
+  @join__type(graph: BOOKING)
+{
+  PROFILE_BASE_RATE @join__enumValue(graph: BOOKING)
+  FIXED_DAILY_RATE @join__enumValue(graph: BOOKING)
+  STAY_PRODUCT_RATE @join__enumValue(graph: BOOKING)
+  RULE_DISCOUNT @join__enumValue(graph: BOOKING)
+  RULE_SURCHARGE @join__enumValue(graph: BOOKING)
+  COMMISSION @join__enumValue(graph: BOOKING)
+}
+
 enum PricingActionType
   @join__type(graph: BOOKING)
 {
@@ -346,6 +384,31 @@ enum PricingChannel
   ADMIN_PORTAL @join__enumValue(graph: BOOKING)
   CUSTOMER_WEB @join__enumValue(graph: BOOKING)
   OTA @join__enumValue(graph: BOOKING)
+}
+
+type PricingRuleEvaluation
+  @join__type(graph: BOOKING)
+{
+  order: Int!
+  chargeDate: String
+  ruleId: ID!
+  code: String!
+  priority: Int!
+  status: PricingRuleEvaluationStatus!
+  reason: String!
+  actionType: PricingActionType!
+  actionValue: String!
+  beforeAmount: String!
+  adjustmentAmount: String!
+  afterAmount: String!
+}
+
+enum PricingRuleEvaluationStatus
+  @join__type(graph: BOOKING)
+{
+  MATCHED @join__enumValue(graph: BOOKING)
+  SKIPPED @join__enumValue(graph: BOOKING)
+  SUPERSEDED @join__enumValue(graph: BOOKING)
 }
 
 type PricingRuleVersion
@@ -385,6 +448,43 @@ input PricingRuleVersionInput
   actionValue: String!
 }
 
+type PropertyPriceQuote
+  @join__type(graph: BOOKING)
+{
+  fingerprint: String!
+  calculationVersion: String!
+  roundingPolicy: String!
+  rateProfileVersionId: ID!
+  propertyId: ID!
+  profileVersion: Int!
+  checkInDate: String!
+  checkOutDate: String!
+  guestCount: Int!
+  channel: PricingChannel!
+  staffCreated: Boolean!
+  stayProduct: StayProduct!
+  stayDays: Int!
+  baseDailyRate: String!
+  dailyFactorBps: Int!
+  productDailyRate: String!
+  baseLodgingAmount: String!
+  lodgingBeforeAdjustments: String!
+  discountAmount: String!
+  surchargeAmount: String!
+  lodgingAmount: String!
+  requestedCommissionBps: Int
+  commissionDefaultBps: Int!
+  commissionMaxBps: Int!
+  commissionBaseAmount: String!
+  commissionBps: Int!
+  commissionAmount: String!
+  totalAmount: String!
+  currency: String!
+  precedence: [String!]!
+  evaluatedRules: [PricingRuleEvaluation!]!
+  components: [PriceComponent!]!
+}
+
 type PropertyRateProfileVersion
   @join__type(graph: BOOKING)
 {
@@ -420,6 +520,7 @@ type Query
   bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
   propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
   propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @join__field(graph: BOOKING) @authenticated
+  calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!): PropertyPriceQuote! @join__field(graph: BOOKING) @authenticated
   paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
   myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
@@ -458,6 +559,14 @@ input RetainedPermissionScopesInput
 {
   permissionCode: String!
   scopes: [DataScope!]!
+}
+
+enum StayProduct
+  @join__type(graph: BOOKING)
+{
+  SHORT @join__enumValue(graph: BOOKING)
+  MEDIUM @join__enumValue(graph: BOOKING)
+  LONG @join__enumValue(graph: BOOKING)
 }
 
 type Subscription

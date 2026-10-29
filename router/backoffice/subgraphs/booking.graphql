@@ -6,6 +6,7 @@ type Query {
   bookings(status: String, limit: Int = 50): [Booking!]! @authenticated
   propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @authenticated
   propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @authenticated
+  calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!): PropertyPriceQuote! @authenticated
 }
 
 type Mutation {
@@ -63,6 +64,89 @@ type PricingRuleVersion {
   actionValue: String!
 }
 
+type PropertyPriceQuote {
+  fingerprint: String!
+  calculationVersion: String!
+  roundingPolicy: String!
+  rateProfileVersionId: ID!
+  propertyId: ID!
+  profileVersion: Int!
+  checkInDate: String!
+  checkOutDate: String!
+  guestCount: Int!
+  channel: PricingChannel!
+  staffCreated: Boolean!
+  stayProduct: StayProduct!
+  stayDays: Int!
+  baseDailyRate: String!
+  dailyFactorBps: Int!
+  productDailyRate: String!
+  baseLodgingAmount: String!
+  lodgingBeforeAdjustments: String!
+  discountAmount: String!
+  surchargeAmount: String!
+  lodgingAmount: String!
+  requestedCommissionBps: Int
+  commissionDefaultBps: Int!
+  commissionMaxBps: Int!
+  commissionBaseAmount: String!
+  commissionBps: Int!
+  commissionAmount: String!
+  totalAmount: String!
+  currency: String!
+  precedence: [String!]!
+  evaluatedRules: [PricingRuleEvaluation!]!
+  components: [PriceComponent!]!
+}
+
+type PricingRuleEvaluation {
+  order: Int!
+  chargeDate: String
+  ruleId: ID!
+  code: String!
+  priority: Int!
+  status: PricingRuleEvaluationStatus!
+  reason: String!
+  actionType: PricingActionType!
+  actionValue: String!
+  beforeAmount: String!
+  adjustmentAmount: String!
+  afterAmount: String!
+}
+
+type PriceComponent {
+  order: Int!
+  type: PriceComponentType!
+  code: String!
+  chargeDate: String
+  ruleCode: String
+  quantity: Int!
+  unitAmount: String!
+  factorBps: Int
+  amount: String!
+}
+
+enum StayProduct {
+  SHORT
+  MEDIUM
+  LONG
+}
+
+enum PricingRuleEvaluationStatus {
+  MATCHED
+  SKIPPED
+  SUPERSEDED
+}
+
+enum PriceComponentType {
+  PROFILE_BASE_RATE
+  FIXED_DAILY_RATE
+  STAY_PRODUCT_RATE
+  RULE_DISCOUNT
+  RULE_SURCHARGE
+  COMMISSION
+}
+
 enum PricingChannel {
   ADMIN_PORTAL
   CUSTOMER_WEB
@@ -110,4 +194,15 @@ input PricingRuleVersionInput {
   maximumGuests: Int
   actionType: PricingActionType!
   actionValue: String!
+}
+
+input CalculatePropertyPriceQuoteInput {
+  rateProfileVersionId: ID!
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+  guestCount: Int! = 1
+  channel: PricingChannel!
+  staffCreated: Boolean! = false
+  commissionBps: Int
 }

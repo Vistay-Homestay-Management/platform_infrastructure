@@ -40,6 +40,7 @@ Enable an optional group only after supplying its required variables:
 | `runAuthorizationE2E=true` | Maker-checker and Booking scope flow | Full profile, three PKCE tokens, local booking fixtures |
 | `runAuthorizationUnavailable=true` | Fail-closed User authorization dependency test | Run Authorization E2E first, force a cache miss, then temporarily stop only `service-user` |
 | `runPricingAuthoring=true` | Immutable property pricing authoring and validation flow | `makerAccessToken`, CTV `targetAccessToken`, and an existing exact-unit `pricingPropertyId` |
+| `runPricingCalculation=true` | Deterministic SHORT/MEDIUM/LONG quote calculation and explanation | Run pricing authoring first; retain `pricingVersionId`, `pricingVersionNumber`, and `pricingPropertyId` |
 
 Never commit populated secret values or an exported environment containing
 tokens.
@@ -154,6 +155,29 @@ Pricing authoring is append-only, so there is no delete/cleanup request. Clear
 `pricingIdempotencyKey` before intentionally changing any happy-path input;
 keeping the same key is only valid for the exact replay test. Leave
 `runPricingAuthoring=false` during ordinary smoke runs.
+
+After authoring, set `runPricingAuthoring=false` and
+`runPricingCalculation=true`, then run **03 Calculate and explain deterministic
+quotes**. The checked-in cases prove:
+
+- a three-day SHORT stay applies the weekend surcharge per eligible charge day,
+  explains matched/skipped rules and commission components, and totals VND
+  3,360,000;
+- the identical input and immutable profile return the same fingerprint, total,
+  and full explanation;
+- a 31-day MEDIUM stay uses the 70% daily factor and totals VND 22,785,000,
+  including staff commission;
+- a one-calendar-year LONG stay uses the 55% daily factor and totals VND
+  210,787,500, including staff commission;
+- zero-night input and a profile/property mismatch fail with stable error codes;
+- Hive Router rejects an anonymous quote request.
+
+The calculation query always supplies `rateProfileVersionId`; it does not pick
+an active version. SCRUM-355 neither publishes pricing, accepts a manual
+override, creates a durable quote ID/expiry, nor stores a booking snapshot.
+Those lifecycle concerns remain in SCRUM-356 and SCRUM-357. The environment's
+`pricingQuoteShortSnapshot`, fingerprint and total are temporary Postman
+evidence only; their checked-in values remain empty.
 
 ## Payment activation
 
