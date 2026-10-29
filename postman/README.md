@@ -107,8 +107,12 @@ After the CTV grant is approved, seed deterministic Booking rows:
 ```
 
 The fixture script refuses any PostgreSQL container other than the local
-`vistay-postgres-1`. It creates OWN, ASSIGNED and unrelated bookings only for
-scope verification. No token or password is stored in the repository.
+`vistay-postgres-1`. It creates creator-provenance, ASSIGNED and unrelated
+bookings for scope verification. Creator provenance is deliberately denied:
+`created_by` is audit metadata and never implies business ownership. The flow
+also verifies that `totalAmount` is null unless `booking:read_sensitive` covers
+the same record. The legacy environment variable remains `ownBookingId` for
+collection compatibility. No token or password is stored in the repository.
 ## Payment activation
 
 The checked-in local configuration defaults to `PAYMENT_ACTIVATION_MODE=DISABLED`.

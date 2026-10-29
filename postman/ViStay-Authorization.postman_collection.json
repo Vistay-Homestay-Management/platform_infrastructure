@@ -247,13 +247,15 @@
       "name": "04 Booking scope proof",
       "item": [
         {
-          "name": "Target reads OWN booking",
+          "name": "Target is denied creator-provenance booking",
           "request": { "method": "POST", "header": [
             { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
             { "key": "Content-Type", "value": "application/json" },
             { "key": "X-CSRF-Token", "value": "1" }
           ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode status totalAmount currency } }\",\"variables\":{\"id\":\"{{ownBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OWN booking allowed', () => pm.expect(pm.response.json().errors).to.be.undefined);"] } }]
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('created_by never implies OWN', () => pm.expect(pm.response.json().errors[0].extensions.code).to.eql('FORBIDDEN_SCOPE'));"
+          ] } }]
         },
         {
           "name": "Target reads ASSIGNED booking",
@@ -261,8 +263,12 @@
             { "key": "Authorization", "value": "Bearer {{targetAccessToken}}" },
             { "key": "Content-Type", "value": "application/json" },
             { "key": "X-CSRF-Token", "value": "1" }
-          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode status } }\",\"variables\":{\"id\":\"{{assignedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('ASSIGNED booking allowed', () => pm.expect(pm.response.json().errors).to.be.undefined);"] } }]
+          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode status totalAmount } }\",\"variables\":{\"id\":\"{{assignedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const payload = pm.response.json();",
+            "pm.test('ASSIGNED booking allowed', () => pm.expect(payload.errors).to.be.undefined);",
+            "pm.test('commercial total is hidden without booking:read_sensitive', () => pm.expect(payload.data.booking.totalAmount).to.eql(null));"
+          ] } }]
         },
         {
           "name": "Target is denied unrelated booking",
@@ -281,8 +287,12 @@
             { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
             { "key": "Content-Type", "value": "application/json" },
             { "key": "X-CSRF-Token", "value": "1" }
-          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode } }\",\"variables\":{\"id\":\"{{unrelatedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('ALL scope allowed', () => pm.expect(pm.response.json().errors).to.be.undefined);"] } }]
+          ], "body": { "mode": "raw", "raw": "{\"query\":\"query($id: ID!) { booking(id: $id) { id bookingCode totalAmount } }\",\"variables\":{\"id\":\"{{unrelatedBookingId}}\"}}" }, "url": "{{graphqlUrl}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const payload = pm.response.json();",
+            "pm.test('ALL scope allowed', () => pm.expect(payload.errors).to.be.undefined);",
+            "pm.test('sensitive ALL reveals commercial total', () => pm.expect(payload.data.booking.totalAmount).to.not.eql(null));"
+          ] } }]
         }
       ]
     },

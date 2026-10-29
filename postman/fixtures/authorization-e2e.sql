@@ -11,7 +11,7 @@ INSERT INTO bookings(
     created_by_account_id, assigned_admin_user_id
 ) VALUES
 (
-    '11111111-1111-4111-8111-111111111111', 'AUTHZ-OWN',
+    '11111111-1111-4111-8111-111111111111', 'AUTHZ-PROVENANCE',
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'ADMIN_PORTAL', 'SHORT_TERM', 'CONFIRMED',
     current_date + 7, current_date + 9, 'Scoped fixture', '0000000000', 'fixture@vistay.local',
     '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
