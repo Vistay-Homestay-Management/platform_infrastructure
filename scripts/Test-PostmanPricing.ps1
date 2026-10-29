@@ -45,6 +45,16 @@ $requiredRequests = @{
     'Replay exact pricing override' = 'pricingOverrideSnapshot'
     'Reject changed payload for used override key' = 'IDEMPOTENCY_KEY_REUSED'
     'Apply large pricing override with approval' = 'largeApprovalRequired'
+    'Preview authored pricing publication' = 'previewPropertyRateProfilePublication'
+    'Publish pricing version with expected head' = 'pricing:approve'
+    'Replay exact pricing publication' = 'pricingPublicationSnapshot'
+    'Preview quote from active published pricing' = 'previewPublishedPropertyPriceQuote'
+    'Create immutable pricing quote snapshot' = 'createPropertyPriceQuoteSnapshot'
+    'Replay exact pricing quote snapshot' = 'pricingSnapshotSnapshot'
+    'Read immutable pricing quote snapshot' = 'propertyPriceQuoteSnapshot'
+    'Reject stale base quote snapshot' = 'STALE_BASE_QUOTE'
+    'Consume exact manual override in pricing snapshot' = 'manualOverrideId'
+    'Replay override-consuming pricing snapshot' = 'pricingOverrideConsumptionSnapshot'
 }
 
 foreach ($entry in $requiredRequests.GetEnumerator()) {
@@ -58,6 +68,7 @@ foreach ($entry in $requiredRequests.GetEnumerator()) {
     $body = $request.request.body.raw
     $parseableBody = $body.Replace('{{pricingQuoteGuestCount}}', '2')
     $parseableBody = $parseableBody.Replace('{{pricingQuoteCommissionBps}}', '500')
+    $parseableBody = $parseableBody.Replace('{{pricingPublicationExpectedHeadJson}}', 'null')
     $null = $parseableBody | ConvertFrom-Json
     $testSource = @($request.event | Where-Object listen -eq 'test' |
         ForEach-Object { $_.script.exec }) -join "`n"
@@ -216,6 +227,199 @@ if ($overrideAuthorization.value -ne 'Bearer {{makerAccessToken}}') {
     throw 'The override proof must use the SUPER_ADMIN maker token.'
 }
 
+$publicationFolder = $collection.item |
+    Where-Object name -eq '05 Publish pricing and preserve immutable snapshots' |
+    Select-Object -First 1
+if ($null -eq $publicationFolder) {
+    throw 'The collection is missing the SCRUM-357 publication and snapshot folder.'
+}
+$publicationPrerequest = @($publicationFolder.event |
+    Where-Object listen -eq 'prerequest' | ForEach-Object { $_.script.exec }) -join [Environment]::NewLine
+if (-not $publicationPrerequest.Contains('runPricingPublication')) {
+    throw 'The publication and snapshot folder must remain guarded by runPricingPublication.'
+}
+
+$previewPublication = $requests |
+    Where-Object name -eq 'Preview authored pricing publication' |
+    Select-Object -First 1
+$publish = $requests |
+    Where-Object name -eq 'Publish pricing version with expected head' |
+    Select-Object -First 1
+$publishReplay = $requests |
+    Where-Object name -eq 'Replay exact pricing publication' |
+    Select-Object -First 1
+$publishedPreview = $requests |
+    Where-Object name -eq 'Preview quote from active published pricing' |
+    Select-Object -First 1
+$createSnapshot = $requests |
+    Where-Object name -eq 'Create immutable pricing quote snapshot' |
+    Select-Object -First 1
+$snapshotReplay = $requests |
+    Where-Object name -eq 'Replay exact pricing quote snapshot' |
+    Select-Object -First 1
+$readSnapshot = $requests |
+    Where-Object name -eq 'Read immutable pricing quote snapshot' |
+    Select-Object -First 1
+$staleSnapshot = $requests |
+    Where-Object name -eq 'Reject stale base quote snapshot' |
+    Select-Object -First 1
+$consumeOverride = $requests |
+    Where-Object name -eq 'Consume exact manual override in pricing snapshot' |
+    Select-Object -First 1
+$consumeOverrideReplay = $requests |
+    Where-Object name -eq 'Replay override-consuming pricing snapshot' |
+    Select-Object -First 1
+
+if (-not $previewPublication.request.body.raw.Contains('$rateProfileVersionId: ID!') -or
+    -not $previewPublication.request.body.raw.Contains(
+        'previewPropertyRateProfilePublication(rateProfileVersionId: $rateProfileVersionId)') -or
+    -not $previewPublication.request.body.raw.Contains(
+        '"rateProfileVersionId":"{{pricingVersionId}}"')) {
+    throw 'Publication preview must use the normative rateProfileVersionId wire field.'
+}
+foreach ($publicationCommand in @($publish, $publishReplay)) {
+    if (-not $publicationCommand.request.body.raw.Contains(
+            '"rateProfileVersionId":"{{pricingVersionId}}"') -or
+        $publicationCommand.request.body.raw.Contains('"profileVersionId"')) {
+        throw "Publication command '$($publicationCommand.name)' must use the normative rateProfileVersionId input field."
+    }
+}
+
+if ($publish.request.body.raw -cne $publishReplay.request.body.raw) {
+    throw 'The exact pricing publication replay must send a byte-identical GraphQL body.'
+}
+if ($createSnapshot.request.body.raw -cne $snapshotReplay.request.body.raw) {
+    throw 'The exact pricing snapshot replay must send a byte-identical GraphQL body.'
+}
+if ($consumeOverride.request.body.raw -cne $consumeOverrideReplay.request.body.raw) {
+    throw 'The exact override-consuming snapshot replay must send a byte-identical GraphQL body.'
+}
+
+$previewPublicationEvidence = $previewPublication.request.body.raw +
+    (@($previewPublication.event | Where-Object listen -eq 'test' |
+        ForEach-Object { $_.script.exec }) -join [Environment]::NewLine)
+foreach ($evidence in @(
+    'rateProfileVersionId', 'profileFingerprint', 'currentPublication', 'published',
+    'pricingPublicationExpectedHeadJson'
+)) {
+    if (-not $previewPublicationEvidence.Contains($evidence)) {
+        throw "Publication preview does not preserve '$evidence'."
+    }
+}
+
+$publishEvidence = $publish.request.body.raw + (@($publish.event |
+    Where-Object listen -eq 'test' | ForEach-Object { $_.script.exec }) -join [Environment]::NewLine)
+foreach ($evidence in @(
+    'rateProfileVersionId', 'expectedProfileFingerprint', 'expectedCurrentPublicationId',
+    'pricingPublicationExpectedHeadJson', 'PRICING_PUBLICATION_V1',
+    'pricing:approve', 'publicationRevision', 'previousPublicationId',
+    'pricingPublicationSnapshot'
+)) {
+    if (-not $publishEvidence.Contains($evidence)) {
+        throw "Publication compare-and-set proof does not cover '$evidence'."
+    }
+}
+
+$publishedPreviewEvidence = $publishedPreview.request.body.raw +
+    (@($publishedPreview.event | Where-Object listen -eq 'test' |
+        ForEach-Object { $_.script.exec }) -join [Environment]::NewLine)
+foreach ($evidence in @(
+    'PublishedPropertyPriceQuoteInput', 'previewPublishedPropertyPriceQuote',
+    'pricingPublicationId', 'pricingPublishedQuoteFingerprint',
+    'pricingPublishedQuoteProfileId', 'pricingPublishedQuoteSnapshot'
+)) {
+    if (-not $publishedPreviewEvidence.Contains($evidence)) {
+        throw "Published quote preview does not cover '$evidence'."
+    }
+}
+
+$snapshotEvidence = $createSnapshot.request.body.raw + (@($createSnapshot.event |
+    Where-Object listen -eq 'test' | ForEach-Object { $_.script.exec }) -join [Environment]::NewLine)
+foreach ($evidence in @(
+    'expectedRateProfileVersionId', 'expectedBaseQuoteFingerprint',
+    'pricingPublicationId', 'manualOverrideId', 'baseQuoteFingerprint',
+    'finalQuote', 'pricing:read', 'ACTIVE', 'createdAt', 'expiresAt',
+    'pricingSnapshotSnapshot'
+)) {
+    if (-not $snapshotEvidence.Contains($evidence)) {
+        throw "Immutable pricing snapshot proof does not cover '$evidence'."
+    }
+}
+if (-not $readSnapshot.request.body.raw.Contains('propertyPriceQuoteSnapshot') -or
+    -not ((@($readSnapshot.event | Where-Object listen -eq 'test' |
+        ForEach-Object { $_.script.exec }) -join [Environment]::NewLine).Contains('pricingSnapshotSnapshot'))) {
+    throw 'The historical snapshot read must compare the complete stored evidence.'
+}
+if (-not $staleSnapshot.request.body.raw.Contains('{{pricingSnapshotStaleFingerprint}}') -or
+    -not $staleSnapshot.request.body.raw.Contains('{{pricingSnapshotStaleIdempotencyKey}}')) {
+    throw 'The stale snapshot proof must use a separate command and changed base fingerprint.'
+}
+
+foreach ($optional in @($consumeOverride, $consumeOverrideReplay)) {
+    $guard = @($optional.event | Where-Object listen -eq 'prerequest' |
+        ForEach-Object { $_.script.exec }) -join [Environment]::NewLine
+    if (-not $guard.Contains('runPricingOverrideConsumption')) {
+        throw "Optional request '$($optional.name)' must remain separately opt-in."
+    }
+}
+$consumptionEvidence = $consumeOverride.request.body.raw +
+    (@($consumeOverride.event | Where-Object listen -eq 'test' |
+        ForEach-Object { $_.script.exec }) -join [Environment]::NewLine)
+foreach ($evidence in @(
+    'manualOverrideId', '{{pricingOverrideId}}',
+    'pricingOverrideTargetAmount', 'MANUAL_OVERRIDE:whole-stay-lodging-reduction',
+    'pricingOverrideConsumptionSnapshot'
+)) {
+    if (-not $consumptionEvidence.Contains($evidence)) {
+        throw "Exact manual-override consumption does not cover '$evidence'."
+    }
+}
+
+foreach ($name in @(
+    'Preview authored pricing publication',
+    'Preview quote from active published pricing',
+    'Read immutable pricing quote snapshot'
+)) {
+    $raw = ($requests | Where-Object name -eq $name | Select-Object -First 1).request.body.raw
+    if (-not $raw.Contains('query ') -or $raw.Contains('mutation ')) {
+        throw "SCRUM-357 read '$name' must remain non-mutating."
+    }
+}
+foreach ($name in @(
+    'Publish pricing version with expected head',
+    'Replay exact pricing publication',
+    'Create immutable pricing quote snapshot',
+    'Replay exact pricing quote snapshot',
+    'Reject stale base quote snapshot',
+    'Consume exact manual override in pricing snapshot',
+    'Replay override-consuming pricing snapshot'
+)) {
+    $request = $requests | Where-Object name -eq $name | Select-Object -First 1
+    if (-not $request.request.body.raw.Contains('mutation ')) {
+        throw "SCRUM-357 command '$name' must use a GraphQL mutation."
+    }
+    $authorization = $request.request.header |
+        Where-Object key -eq 'Authorization' | Select-Object -First 1
+    if ($authorization.value -ne 'Bearer {{makerAccessToken}}') {
+        throw "SCRUM-357 command '$name' must use the SUPER_ADMIN maker token."
+    }
+}
+
+$collectionPrerequest = @($collection.event |
+    Where-Object listen -eq 'prerequest' | ForEach-Object { $_.script.exec }) -join [Environment]::NewLine
+foreach ($uuidCorrelation in @(
+    'pm.environment.set(''pricingOverrideCorrelationId'', pm.variables.replaceIn(''{{$guid}}''))',
+    'pm.environment.set(''pricingLargeOverrideCorrelationId'', pm.variables.replaceIn(''{{$guid}}''))',
+    'pm.environment.set(''pricingPublicationCorrelationId'', pm.variables.replaceIn(''{{$guid}}''))',
+    'pm.environment.set(''pricingSnapshotCorrelationId'', pm.variables.replaceIn(''{{$guid}}''))',
+    'pm.environment.set(''pricingSnapshotStaleCorrelationId'', pm.variables.replaceIn(''{{$guid}}''))',
+    'pm.environment.set(''pricingOverrideConsumptionCorrelationId'', pm.variables.replaceIn(''{{$guid}}''))'
+)) {
+    if (-not $collectionPrerequest.Contains($uuidCorrelation)) {
+        throw "Correlation generation must use a canonical UUID: $uuidCorrelation"
+    }
+}
+
 $anonymous = $requests | Where-Object name -eq 'Anonymous caller cannot calculate quote' |
     Select-Object -First 1
 if (@($anonymous.request.header | Where-Object key -eq 'Authorization').Count -ne 0) {
@@ -252,7 +456,20 @@ $requiredEnvironment = @(
     'pricingOverrideConflictingTargetAmount', 'pricingOverrideId',
     'pricingOverrideSnapshot', 'pricingLargeOverrideIdempotencyKey',
     'pricingLargeOverrideCorrelationId', 'pricingLargeOverrideTargetAmount',
-    'pricingLargeOverrideId'
+    'pricingLargeOverrideId', 'runPricingPublication',
+    'runPricingOverrideConsumption', 'pricingPublicationIdempotencyKey',
+    'pricingPublicationCorrelationId', 'pricingPublicationProfileFingerprint',
+    'pricingPublicationExpectedHeadJson', 'pricingPublicationId',
+    'pricingPublicationRevision', 'pricingPublicationSnapshot',
+    'pricingPublishedQuoteFingerprint', 'pricingPublishedQuoteProfileId',
+    'pricingPublishedQuoteSnapshot', 'pricingSnapshotIdempotencyKey',
+    'pricingSnapshotCorrelationId', 'pricingSnapshotId',
+    'pricingSnapshotSnapshot', 'pricingSnapshotStaleIdempotencyKey',
+    'pricingSnapshotStaleCorrelationId', 'pricingSnapshotStaleFingerprint',
+    'pricingOverrideConsumptionIdempotencyKey',
+    'pricingOverrideConsumptionCorrelationId',
+    'pricingOverrideConsumptionSnapshotId',
+    'pricingOverrideConsumptionSnapshot'
 )
 foreach ($key in $requiredEnvironment) {
     if (-not $environmentValues.ContainsKey($key)) {
@@ -271,6 +488,12 @@ if ($environmentValues['runPricingOverride'] -ne 'false') {
 if ($environmentValues['runPricingLargeOverride'] -ne 'false') {
     throw 'Large pricing override must remain separately opt-in in the checked-in environment.'
 }
+if ($environmentValues['runPricingPublication'] -ne 'false') {
+    throw 'Pricing publication and snapshot persistence must remain opt-in.'
+}
+if ($environmentValues['runPricingOverrideConsumption'] -ne 'false') {
+    throw 'Manual-override consumption must remain separately opt-in.'
+}
 foreach ($key in @(
     'pricingPropertyId', 'pricingIdempotencyKey', 'pricingInvalidCommissionIdempotencyKey',
     'pricingInvalidRuleIdempotencyKey', 'pricingDeniedIdempotencyKey', 'pricingVersionId',
@@ -282,7 +505,19 @@ foreach ($key in @(
     'pricingOverrideConflictingTargetAmount', 'pricingOverrideId',
     'pricingOverrideSnapshot', 'pricingLargeOverrideIdempotencyKey',
     'pricingLargeOverrideCorrelationId', 'pricingLargeOverrideTargetAmount',
-    'pricingLargeOverrideId'
+    'pricingLargeOverrideId', 'pricingPublicationIdempotencyKey',
+    'pricingPublicationCorrelationId', 'pricingPublicationProfileFingerprint',
+    'pricingPublicationExpectedHeadJson', 'pricingPublicationId',
+    'pricingPublicationRevision', 'pricingPublicationSnapshot',
+    'pricingPublishedQuoteFingerprint', 'pricingPublishedQuoteProfileId',
+    'pricingPublishedQuoteSnapshot', 'pricingSnapshotIdempotencyKey',
+    'pricingSnapshotCorrelationId', 'pricingSnapshotId',
+    'pricingSnapshotSnapshot', 'pricingSnapshotStaleIdempotencyKey',
+    'pricingSnapshotStaleCorrelationId', 'pricingSnapshotStaleFingerprint',
+    'pricingOverrideConsumptionIdempotencyKey',
+    'pricingOverrideConsumptionCorrelationId',
+    'pricingOverrideConsumptionSnapshotId',
+    'pricingOverrideConsumptionSnapshot'
 )) {
     if (-not [string]::IsNullOrEmpty($environmentValues[$key])) {
         throw "Checked-in pricing variable '$key' must be empty."
@@ -312,6 +547,20 @@ foreach ($schemaMarker in @(
     'enum PricingOverrideScopeType',
     'input PricingRuleVersionInput',
     'input ApplyPropertyPriceOverrideInput',
+    'previewPropertyRateProfilePublication(rateProfileVersionId: ID!)',
+    'activePropertyRateProfileVersion(propertyId: ID!, checkInDate: String!, checkOutDate: String!)',
+    'previewPublishedPropertyPriceQuote(input: PublishedPropertyPriceQuoteInput!)',
+    'propertyPriceQuoteSnapshot(id: ID!)',
+    'publishPropertyRateProfileVersion(input: PublishPropertyRateProfileVersionInput!)',
+    'createPropertyPriceQuoteSnapshot(input: CreatePropertyPriceQuoteSnapshotInput!)',
+    'type PricingProfilePublicationPreview',
+    'type PricingProfilePublication',
+    'type PublishedPropertyPriceQuotePreview',
+    'type PropertyPriceFinalQuote',
+    'type PropertyPriceQuoteSnapshot',
+    'input PublishPropertyRateProfileVersionInput',
+    'input PublishedPropertyPriceQuoteInput',
+    'input CreatePropertyPriceQuoteSnapshotInput',
     'MANUAL_OVERRIDE',
     'totalAmount: String'
 )) {
@@ -323,5 +572,13 @@ $bookingType = [regex]::Match($bookingSchema, '(?s)type Booking\s*\{.*?\}').Valu
 if ($bookingType.Contains('totalAmount: String!')) {
     throw 'Booking totalAmount must remain nullable because authorization can mask it.'
 }
+$publishInputType = [regex]::Match(
+    $bookingSchema,
+    '(?s)input PublishPropertyRateProfileVersionInput\s*\{.*?\}'
+).Value
+if (-not $publishInputType.Contains('rateProfileVersionId: ID!') -or
+    $publishInputType.Contains('profileVersionId: ID!')) {
+    throw 'Booking publication input must expose rateProfileVersionId, not the obsolete profileVersionId alias.'
+}
 
-Write-Output "Postman pricing contract passed: $($requests.Count) requests with immutable authoring, deterministic quote explanation, and audited override assertions."
+Write-Output "Postman pricing contract passed: $($requests.Count) requests with immutable authoring, deterministic quote explanation, audited override, publication CAS, and historical snapshot assertions."

@@ -202,6 +202,14 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             throw "Kafka ACLs must cover authorization-cache consumer '$authorizationConsumer' exactly."
         }
     }
+    foreach ($pricingPublicationContract in @(
+        'create_topic vistay.booking.rate-profile-published.v1',
+        'grant_producer vistay-booking vistay.booking.rate-profile-published.v1'
+    )) {
+        if (-not $kafkaInitializer.Contains($pricingPublicationContract)) {
+            throw "Kafka bootstrap is missing pricing publication contract '$pricingPublicationContract'."
+        }
+    }
 
     $user = $configuration.services.user
     foreach ($expected in @(
@@ -288,6 +296,10 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         if ($configuration.services.booking.environment.GRPC_ALLOWED_CALLER_URIS -ne
             'spiffe://vistay/service/payment,spiffe://vistay/service/finance') {
             throw 'Booking gRPC must allow only the Payment and Finance SPIFFE callers.'
+        }
+        if ($configuration.services.booking.environment.RATE_PROFILE_PUBLISHED_TOPIC -ne
+            'vistay.booking.rate-profile-published.v1') {
+            throw 'Booking must publish the versioned rate-profile-published topic.'
         }
         $bookingGrpcMount = @($configuration.services.booking.volumes |
             Where-Object target -eq '/run/secrets/grpc')

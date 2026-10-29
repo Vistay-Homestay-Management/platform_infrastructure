@@ -34,7 +34,7 @@ Important trust boundaries:
 - VietQR callbacks remain disabled until the production HTTPS and merchant UAT gates pass.
 - Only the Backoffice realm is exposed during Epic 01; Host and Customer are deferred.
 - Kafka uses TLS, distinct SCRAM principals, deny-by-default ACLs, and exactly
-  the reviewed Epic 01 and Payment contract topics.
+  the reviewed versioned contract topics, including Booking pricing publication.
 - Internal User authorization RPCs require a CA-issued client certificate,
   the Authentication SPIFFE URI, and a deadline no longer than two seconds.
 - Authentication, User, Notification, Finance, and Payment use separate runtime and migrator
@@ -60,7 +60,8 @@ and rollback procedures.
 Import the collection and local environment from [`postman/`](postman/README.md).
 The default run executes only read-only health, readiness, OIDC discovery, and
 unauthenticated security checks. Account bootstrap, notification streaming,
-payment mutations, and VietQR callbacks require explicit opt-in flags.
+payment mutations, pricing authoring/publication, and VietQR callbacks require
+explicit opt-in flags.
 
 ## Federation contracts
 

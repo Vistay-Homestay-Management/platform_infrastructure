@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "4e471f5e-72cb-48d7-b772-d5035038043e",
     "name": "ViStay Pricing",
-    "description": "Opt-in SCRUM-354 immutable authoring, SCRUM-355 deterministic quote calculation, and SCRUM-356 audited manual override flow. Every operation names an immutable profile version; override commands are append-only and never publish pricing or persist a booking snapshot.",
+    "description": "Opt-in SCRUM-354 immutable authoring, SCRUM-355 deterministic quote calculation, SCRUM-356 audited manual override, and SCRUM-357 publication plus immutable quote-snapshot flow. Mutating folders remain disabled by default; published pricing, overrides, and snapshots are append-only.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -19,18 +19,25 @@
           "  }",
           "}",
           "if (pm.environment.get('runPricingOverride') === 'true') {",
-          "  for (const key of ['pricingOverrideIdempotencyKey', 'pricingOverrideCorrelationId']) {",
-          "    if (!pm.environment.get(key)) {",
-          "      pm.environment.set(key, pm.variables.replaceIn('pricing-override-v1-{{$guid}}'));",
-          "    }",
-          "  }",
+          "  if (!pm.environment.get('pricingOverrideIdempotencyKey')) pm.environment.set('pricingOverrideIdempotencyKey', pm.variables.replaceIn('pricing-override-v1-{{$guid}}'));",
+          "  if (!pm.environment.get('pricingOverrideCorrelationId')) pm.environment.set('pricingOverrideCorrelationId', pm.variables.replaceIn('{{$guid}}'));",
           "}",
           "if (pm.environment.get('runPricingLargeOverride') === 'true') {",
-          "  for (const key of ['pricingLargeOverrideIdempotencyKey', 'pricingLargeOverrideCorrelationId']) {",
-          "    if (!pm.environment.get(key)) {",
-          "      pm.environment.set(key, pm.variables.replaceIn('pricing-large-override-v1-{{$guid}}'));",
-          "    }",
+          "  if (!pm.environment.get('pricingLargeOverrideIdempotencyKey')) pm.environment.set('pricingLargeOverrideIdempotencyKey', pm.variables.replaceIn('pricing-large-override-v1-{{$guid}}'));",
+          "  if (!pm.environment.get('pricingLargeOverrideCorrelationId')) pm.environment.set('pricingLargeOverrideCorrelationId', pm.variables.replaceIn('{{$guid}}'));",
+          "}",
+          "if (pm.environment.get('runPricingPublication') === 'true') {",
+          "  for (const key of ['pricingPublicationIdempotencyKey', 'pricingSnapshotIdempotencyKey', 'pricingSnapshotStaleIdempotencyKey']) {",
+          "    if (!pm.environment.get(key)) pm.environment.set(key, pm.variables.replaceIn('pricing-publication-v1-{{$guid}}'));",
           "  }",
+          "  if (!pm.environment.get('pricingPublicationCorrelationId')) pm.environment.set('pricingPublicationCorrelationId', pm.variables.replaceIn('{{$guid}}'));",
+          "  if (!pm.environment.get('pricingSnapshotCorrelationId')) pm.environment.set('pricingSnapshotCorrelationId', pm.variables.replaceIn('{{$guid}}'));",
+          "  if (!pm.environment.get('pricingSnapshotStaleCorrelationId')) pm.environment.set('pricingSnapshotStaleCorrelationId', pm.variables.replaceIn('{{$guid}}'));",
+          "  if (!pm.environment.get('pricingSnapshotStaleFingerprint')) pm.environment.set('pricingSnapshotStaleFingerprint', '0000000000000000000000000000000000000000000000000000000000000000');",
+          "}",
+          "if (pm.environment.get('runPricingOverrideConsumption') === 'true') {",
+          "  if (!pm.environment.get('pricingOverrideConsumptionIdempotencyKey')) pm.environment.set('pricingOverrideConsumptionIdempotencyKey', pm.variables.replaceIn('pricing-override-consume-v1-{{$guid}}'));",
+          "  if (!pm.environment.get('pricingOverrideConsumptionCorrelationId')) pm.environment.set('pricingOverrideConsumptionCorrelationId', pm.variables.replaceIn('{{$guid}}'));",
           "}"
         ]
       }
@@ -908,6 +915,460 @@
                   "if (override) {",
                   "  pm.environment.set('pricingLargeOverrideId', override.id);",
                   "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Publish pricing and preserve immutable snapshots",
+      "description": "SCRUM-357 previews one immutable profile, publishes it with an expected-head compare-and-set, selects it server-side for a published quote, and persists byte-stable pricing evidence. Publication and snapshots are append-only; a fresh authored profile is required for each new run.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runPricingPublication') !== 'true') {",
+              "  pm.execution.skipRequest();",
+              "}",
+              "for (const key of ['makerAccessToken', 'pricingVersionId', 'pricingPropertyId']) {",
+              "  if (!pm.environment.get(key)) throw new Error('Pricing publication requires ' + key + '; run authoring with a fresh profile first.');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Preview authored pricing publication",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query PreviewPricingPublication($rateProfileVersionId: ID!) { previewPropertyRateProfilePublication(rateProfileVersionId: $rateProfileVersionId) { profileFingerprint published profile { id propertyId version effectiveFrom effectiveToExclusive quoteTtlMinutes currency } currentPublication { id propertyId rateProfileVersionId publicationRevision profileFingerprint snapshotSchemaVersion publishedAt } publication { id rateProfileVersionId publicationRevision } } }\",\"variables\":{\"rateProfileVersionId\":\"{{pricingVersionId}}\"}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const preview = payload.data && payload.data.previewPropertyRateProfilePublication;",
+                  "pm.test('fresh immutable profile can be previewed without publishing', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(preview.profile.id).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(preview.profile.propertyId).to.eql(pm.environment.get('pricingPropertyId'));",
+                  "  pm.expect(preview.profileFingerprint).to.match(/^[0-9a-f]{64}$/);",
+                  "  pm.expect(preview.published).to.eql(false);",
+                  "  pm.expect(preview.publication).to.eql(null);",
+                  "});",
+                  "if (preview) {",
+                  "  pm.environment.set('pricingPublicationProfileFingerprint', preview.profileFingerprint);",
+                  "  pm.environment.set('pricingPublicationExpectedHeadJson', preview.currentPublication ? JSON.stringify(preview.currentPublication.id) : 'null');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Publish pricing version with expected head",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingPublicationCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation PublishPricing($input: PublishPropertyRateProfileVersionInput!) { publishPropertyRateProfileVersion(input: $input) { id idempotencyKey requestHash propertyId rateProfileVersionId previousPublicationId publicationRevision profileFingerprint snapshotSchemaVersion actorAdminAccountId actorAdminProfileId authorizationVersion permissionCode scopeType partitionId reason correlationId publishedAt profile { id propertyId version effectiveFrom effectiveToExclusive quoteTtlMinutes currency } } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingPublicationIdempotencyKey}}\",\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"expectedProfileFingerprint\":\"{{pricingPublicationProfileFingerprint}}\",\"expectedCurrentPublicationId\":{{pricingPublicationExpectedHeadJson}},\"reason\":\"Postman approves and publishes one immutable pricing profile\",\"correlationId\":\"{{pricingPublicationCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const publication = payload.data && payload.data.publishPropertyRateProfileVersion;",
+                  "const expectedHead = JSON.parse(pm.environment.get('pricingPublicationExpectedHeadJson'));",
+                  "pm.test('pricing:approve publishes against the previewed property head', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(publication.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(publication.idempotencyKey).to.eql(pm.environment.get('pricingPublicationIdempotencyKey'));",
+                  "  pm.expect(publication.propertyId).to.eql(pm.environment.get('pricingPropertyId'));",
+                  "  pm.expect(publication.rateProfileVersionId).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(publication.previousPublicationId).to.eql(expectedHead);",
+                  "  pm.expect(Number(publication.publicationRevision)).to.be.above(0);",
+                  "  pm.expect(publication.profileFingerprint).to.eql(pm.environment.get('pricingPublicationProfileFingerprint'));",
+                  "  pm.expect(publication.snapshotSchemaVersion).to.eql('PRICING_PUBLICATION_V1');",
+                  "  pm.expect(publication.permissionCode).to.eql('pricing:approve');",
+                  "  pm.expect(publication.scopeType).to.eql('ALL');",
+                  "  pm.expect(publication.reason).to.eql('Postman approves and publishes one immutable pricing profile');",
+                  "  pm.expect(publication.correlationId).to.eql(pm.environment.get('pricingPublicationCorrelationId'));",
+                  "});",
+                  "if (publication) {",
+                  "  pm.environment.set('pricingPublicationId', publication.id);",
+                  "  pm.environment.set('pricingPublicationRevision', publication.publicationRevision);",
+                  "  pm.environment.set('pricingPublicationSnapshot', JSON.stringify(publication));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay exact pricing publication",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingPublicationCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation PublishPricing($input: PublishPropertyRateProfileVersionInput!) { publishPropertyRateProfileVersion(input: $input) { id idempotencyKey requestHash propertyId rateProfileVersionId previousPublicationId publicationRevision profileFingerprint snapshotSchemaVersion actorAdminAccountId actorAdminProfileId authorizationVersion permissionCode scopeType partitionId reason correlationId publishedAt profile { id propertyId version effectiveFrom effectiveToExclusive quoteTtlMinutes currency } } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingPublicationIdempotencyKey}}\",\"rateProfileVersionId\":\"{{pricingVersionId}}\",\"expectedProfileFingerprint\":\"{{pricingPublicationProfileFingerprint}}\",\"expectedCurrentPublicationId\":{{pricingPublicationExpectedHeadJson}},\"reason\":\"Postman approves and publishes one immutable pricing profile\",\"correlationId\":\"{{pricingPublicationCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const publication = payload.data && payload.data.publishPropertyRateProfileVersion;",
+                  "pm.test('exact publication replay returns the original immutable evidence', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(publication.id).to.eql(pm.environment.get('pricingPublicationId'));",
+                  "  pm.expect(JSON.stringify(publication)).to.eql(pm.environment.get('pricingPublicationSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preview quote from active published pricing",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query PreviewPublishedPricing($input: PublishedPropertyPriceQuoteInput!) { previewPublishedPropertyPriceQuote(input: $input) { publication { id propertyId rateProfileVersionId publicationRevision profileFingerprint snapshotSchemaVersion } baseQuote { fingerprint calculationVersion rateProfileVersionId propertyId profileVersion checkInDate checkOutDate guestCount channel staffCreated lodgingAmount commissionBps commissionAmount totalAmount currency precedence components { order type code amount } } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const preview = payload.data && payload.data.previewPublishedPropertyPriceQuote;",
+                  "pm.test('published preview selects the effective profile on the server', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(preview.publication.id).to.eql(pm.environment.get('pricingPublicationId'));",
+                  "  pm.expect(preview.publication.rateProfileVersionId).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(preview.publication.profileFingerprint).to.eql(pm.environment.get('pricingPublicationProfileFingerprint'));",
+                  "  pm.expect(preview.baseQuote.rateProfileVersionId).to.eql(pm.environment.get('pricingVersionId'));",
+                  "  pm.expect(preview.baseQuote.propertyId).to.eql(pm.environment.get('pricingPropertyId'));",
+                  "  pm.expect(preview.baseQuote.fingerprint).to.match(/^[0-9a-f]{64}$/);",
+                  "  pm.expect(preview.baseQuote.staffCreated).to.eql(true);",
+                  "  pm.expect(preview.baseQuote.currency).to.eql('VND');",
+                  "});",
+                  "if (preview) {",
+                  "  pm.environment.set('pricingPublishedQuoteFingerprint', preview.baseQuote.fingerprint);",
+                  "  pm.environment.set('pricingPublishedQuoteProfileId', preview.baseQuote.rateProfileVersionId);",
+                  "  pm.environment.set('pricingPublishedQuoteSnapshot', JSON.stringify(preview));",
+                  "  const stale = preview.baseQuote.fingerprint.startsWith('0') ? '1'.repeat(64) : '0'.repeat(64);",
+                  "  pm.environment.set('pricingSnapshotStaleFingerprint', stale);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create immutable pricing quote snapshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingSnapshotCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreatePricingSnapshot($input: CreatePropertyPriceQuoteSnapshotInput!) { createPropertyPriceQuoteSnapshot(input: $input) { id idempotencyKey requestHash propertyId pricingPublicationId rateProfileVersionId manualOverrideId baseQuoteFingerprint calculationVersion publication { id publicationRevision profileFingerprint snapshotSchemaVersion } baseQuote { fingerprint calculationVersion rateProfileVersionId propertyId checkInDate checkOutDate guestCount channel staffCreated lodgingAmount commissionAmount totalAmount currency precedence components { order type code amount } } finalQuote { baseQuote { fingerprint totalAmount } manualOverride { id targetLodgingAmount afterCommissionAmount afterTotalAmount } precedence components { order type code amount } lodgingAmount commissionAmount totalAmount } actorAdminAccountId actorAdminProfileId authorizationVersion permissionCode scopeType partitionId reason correlationId status currency createdAt expiresAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingSnapshotIdempotencyKey}}\",\"quote\":{\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedRateProfileVersionId\":\"{{pricingPublishedQuoteProfileId}}\",\"expectedBaseQuoteFingerprint\":\"{{pricingPublishedQuoteFingerprint}}\",\"reason\":\"Postman persists the published pricing evidence as an immutable snapshot\",\"correlationId\":\"{{pricingSnapshotCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const snapshot = payload.data && payload.data.createPropertyPriceQuoteSnapshot;",
+                  "pm.test('snapshot preserves the selected publication and exact base result', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(snapshot.id).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(snapshot.idempotencyKey).to.eql(pm.environment.get('pricingSnapshotIdempotencyKey'));",
+                  "  pm.expect(snapshot.pricingPublicationId).to.eql(pm.environment.get('pricingPublicationId'));",
+                  "  pm.expect(snapshot.rateProfileVersionId).to.eql(pm.environment.get('pricingPublishedQuoteProfileId'));",
+                  "  pm.expect(snapshot.manualOverrideId).to.eql(null);",
+                  "  pm.expect(snapshot.baseQuoteFingerprint).to.eql(pm.environment.get('pricingPublishedQuoteFingerprint'));",
+                  "  pm.expect(snapshot.publication.profileFingerprint).to.eql(pm.environment.get('pricingPublicationProfileFingerprint'));",
+                  "  pm.expect(snapshot.baseQuote.fingerprint).to.eql(snapshot.baseQuoteFingerprint);",
+                  "  pm.expect(snapshot.finalQuote.manualOverride).to.eql(null);",
+                  "  pm.expect(snapshot.finalQuote.totalAmount).to.eql(snapshot.baseQuote.totalAmount);",
+                  "  pm.expect(snapshot.permissionCode).to.eql('pricing:read');",
+                  "  pm.expect(snapshot.scopeType).to.eql('ALL');",
+                  "  pm.expect(snapshot.status).to.eql('ACTIVE');",
+                  "  pm.expect(snapshot.currency).to.eql('VND');",
+                  "  pm.expect(new Date(snapshot.expiresAt).getTime()).to.be.above(new Date(snapshot.createdAt).getTime());",
+                  "});",
+                  "if (snapshot) {",
+                  "  pm.environment.set('pricingSnapshotId', snapshot.id);",
+                  "  pm.environment.set('pricingSnapshotSnapshot', JSON.stringify(snapshot));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay exact pricing quote snapshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingSnapshotCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation CreatePricingSnapshot($input: CreatePropertyPriceQuoteSnapshotInput!) { createPropertyPriceQuoteSnapshot(input: $input) { id idempotencyKey requestHash propertyId pricingPublicationId rateProfileVersionId manualOverrideId baseQuoteFingerprint calculationVersion publication { id publicationRevision profileFingerprint snapshotSchemaVersion } baseQuote { fingerprint calculationVersion rateProfileVersionId propertyId checkInDate checkOutDate guestCount channel staffCreated lodgingAmount commissionAmount totalAmount currency precedence components { order type code amount } } finalQuote { baseQuote { fingerprint totalAmount } manualOverride { id targetLodgingAmount afterCommissionAmount afterTotalAmount } precedence components { order type code amount } lodgingAmount commissionAmount totalAmount } actorAdminAccountId actorAdminProfileId authorizationVersion permissionCode scopeType partitionId reason correlationId status currency createdAt expiresAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingSnapshotIdempotencyKey}}\",\"quote\":{\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedRateProfileVersionId\":\"{{pricingPublishedQuoteProfileId}}\",\"expectedBaseQuoteFingerprint\":\"{{pricingPublishedQuoteFingerprint}}\",\"reason\":\"Postman persists the published pricing evidence as an immutable snapshot\",\"correlationId\":\"{{pricingSnapshotCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const snapshot = payload.data && payload.data.createPropertyPriceQuoteSnapshot;",
+                  "pm.test('exact snapshot replay returns the same historical evidence and timestamps', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(snapshot.id).to.eql(pm.environment.get('pricingSnapshotId'));",
+                  "  pm.expect(JSON.stringify(snapshot)).to.eql(pm.environment.get('pricingSnapshotSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read immutable pricing quote snapshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query ReadPricingSnapshot($id: ID!) { propertyPriceQuoteSnapshot(id: $id) { id idempotencyKey requestHash propertyId pricingPublicationId rateProfileVersionId manualOverrideId baseQuoteFingerprint calculationVersion publication { id publicationRevision profileFingerprint snapshotSchemaVersion } baseQuote { fingerprint calculationVersion rateProfileVersionId propertyId checkInDate checkOutDate guestCount channel staffCreated lodgingAmount commissionAmount totalAmount currency precedence components { order type code amount } } finalQuote { baseQuote { fingerprint totalAmount } manualOverride { id targetLodgingAmount afterCommissionAmount afterTotalAmount } precedence components { order type code amount } lodgingAmount commissionAmount totalAmount } actorAdminAccountId actorAdminProfileId authorizationVersion permissionCode scopeType partitionId reason correlationId status currency createdAt expiresAt } }\",\"variables\":{\"id\":\"{{pricingSnapshotId}}\"}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const snapshot = payload.data && payload.data.propertyPriceQuoteSnapshot;",
+                  "pm.test('snapshot read returns stored evidence without recalculation', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(snapshot.id).to.eql(pm.environment.get('pricingSnapshotId'));",
+                  "  pm.expect(JSON.stringify(snapshot)).to.eql(pm.environment.get('pricingSnapshotSnapshot'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject stale base quote snapshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingSnapshotStaleCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation RejectStalePricingSnapshot($input: CreatePropertyPriceQuoteSnapshotInput!) { createPropertyPriceQuoteSnapshot(input: $input) { id } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingSnapshotStaleIdempotencyKey}}\",\"quote\":{\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedRateProfileVersionId\":\"{{pricingPublishedQuoteProfileId}}\",\"expectedBaseQuoteFingerprint\":\"{{pricingSnapshotStaleFingerprint}}\",\"reason\":\"Postman rejects a stale published pricing preview before persistence\",\"correlationId\":\"{{pricingSnapshotStaleCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "pm.test('changed preview fingerprint fails closed with a stable conflict', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.data).to.eql(null);",
+                  "  pm.expect(payload.errors[0].extensions.code).to.eql('STALE_BASE_QUOTE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consume exact manual override in pricing snapshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingOverrideConsumptionCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ConsumePricingOverride($input: CreatePropertyPriceQuoteSnapshotInput!) { createPropertyPriceQuoteSnapshot(input: $input) { id idempotencyKey propertyId pricingPublicationId rateProfileVersionId manualOverrideId baseQuoteFingerprint publication { id profileFingerprint } baseQuote { fingerprint lodgingAmount commissionAmount totalAmount } finalQuote { manualOverride { id baseQuoteFingerprint targetLodgingAmount afterCommissionAmount afterTotalAmount expiresAt } precedence components { type code amount } lodgingAmount commissionAmount totalAmount } reason correlationId createdAt expiresAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingOverrideConsumptionIdempotencyKey}}\",\"quote\":{\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedRateProfileVersionId\":\"{{pricingPublishedQuoteProfileId}}\",\"expectedBaseQuoteFingerprint\":\"{{pricingPublishedQuoteFingerprint}}\",\"manualOverrideId\":\"{{pricingOverrideId}}\",\"reason\":\"Postman consumes the exact audited manual override once\",\"correlationId\":\"{{pricingOverrideConsumptionCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runPricingOverrideConsumption') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}",
+                  "if (!pm.environment.get('pricingOverrideId')) throw new Error('Override consumption requires pricingOverrideId from folder 04.');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const snapshot = payload.data && payload.data.createPropertyPriceQuoteSnapshot;",
+                  "pm.test('exact override ID is consumed into immutable final pricing evidence', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(snapshot.manualOverrideId).to.eql(pm.environment.get('pricingOverrideId'));",
+                  "  pm.expect(snapshot.baseQuoteFingerprint).to.eql(pm.environment.get('pricingPublishedQuoteFingerprint'));",
+                  "  pm.expect(snapshot.finalQuote.manualOverride.id).to.eql(pm.environment.get('pricingOverrideId'));",
+                  "  pm.expect(snapshot.finalQuote.lodgingAmount).to.eql(pm.environment.get('pricingOverrideTargetAmount'));",
+                  "  pm.expect(snapshot.finalQuote.totalAmount).to.eql(snapshot.finalQuote.manualOverride.afterTotalAmount);",
+                  "  pm.expect(snapshot.finalQuote.precedence).to.include('MANUAL_OVERRIDE:whole-stay-lodging-reduction');",
+                  "});",
+                  "if (snapshot) {",
+                  "  pm.environment.set('pricingOverrideConsumptionSnapshotId', snapshot.id);",
+                  "  pm.environment.set('pricingOverrideConsumptionSnapshot', JSON.stringify(snapshot));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay override-consuming pricing snapshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "1" },
+              { "key": "X-Request-ID", "value": "{{pricingOverrideConsumptionCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ConsumePricingOverride($input: CreatePropertyPriceQuoteSnapshotInput!) { createPropertyPriceQuoteSnapshot(input: $input) { id idempotencyKey propertyId pricingPublicationId rateProfileVersionId manualOverrideId baseQuoteFingerprint publication { id profileFingerprint } baseQuote { fingerprint lodgingAmount commissionAmount totalAmount } finalQuote { manualOverride { id baseQuoteFingerprint targetLodgingAmount afterCommissionAmount afterTotalAmount expiresAt } precedence components { type code amount } lodgingAmount commissionAmount totalAmount } reason correlationId createdAt expiresAt } }\",\"variables\":{\"input\":{\"idempotencyKey\":\"{{pricingOverrideConsumptionIdempotencyKey}}\",\"quote\":{\"propertyId\":\"{{pricingPropertyId}}\",\"checkInDate\":\"{{pricingQuoteShortCheckIn}}\",\"checkOutDate\":\"{{pricingQuoteShortCheckOut}}\",\"guestCount\":{{pricingQuoteGuestCount}},\"channel\":\"{{pricingQuoteChannel}}\",\"staffCreated\":true,\"commissionBps\":{{pricingQuoteCommissionBps}}},\"expectedRateProfileVersionId\":\"{{pricingPublishedQuoteProfileId}}\",\"expectedBaseQuoteFingerprint\":\"{{pricingPublishedQuoteFingerprint}}\",\"manualOverrideId\":\"{{pricingOverrideId}}\",\"reason\":\"Postman consumes the exact audited manual override once\",\"correlationId\":\"{{pricingOverrideConsumptionCorrelationId}}\"}}}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('runPricingOverrideConsumption') !== 'true') {",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const snapshot = payload.data && payload.data.createPropertyPriceQuoteSnapshot;",
+                  "pm.test('exact override-consuming replay survives the one-consumer guard', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(snapshot.id).to.eql(pm.environment.get('pricingOverrideConsumptionSnapshotId'));",
+                  "  pm.expect(JSON.stringify(snapshot)).to.eql(pm.environment.get('pricingOverrideConsumptionSnapshot'));",
+                  "});"
                 ]
               }
             }

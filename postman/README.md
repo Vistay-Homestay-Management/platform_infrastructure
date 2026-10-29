@@ -43,6 +43,8 @@ Enable an optional group only after supplying its required variables:
 | `runPricingCalculation=true` | Deterministic SHORT/MEDIUM/LONG quote calculation and explanation | Run pricing authoring first; retain `pricingVersionId`, `pricingVersionNumber`, and `pricingPropertyId` |
 | `runPricingOverride=true` | Audited manual override, exact replay, and changed-payload idempotency rejection | SUPER_ADMIN `makerAccessToken`; run pricing authoring first |
 | `runPricingLargeOverride=true` | Optional reduction above 20% with large-override approval evidence | Also set `runPricingOverride=true`; User Service V8 catalog and refreshed SUPER_ADMIN authorization snapshot |
+| `runPricingPublication=true` | Publish one fresh immutable profile and create/replay/read an immutable quote snapshot | SUPER_ADMIN `makerAccessToken`; run pricing authoring first with a new unpublished `pricingVersionId` |
+| `runPricingOverrideConsumption=true` | Optionally consume the exact SCRUM-356 override into a quote snapshot and replay it | Also set `runPricingPublication=true`; run folder 04 first and retain an unexpired matching `pricingOverrideId` |
 
 Never commit populated secret values or an exported environment containing
 tokens.
@@ -177,9 +179,9 @@ quotes**. The checked-in cases prove:
 The calculation query always supplies `rateProfileVersionId`; it does not pick
 an active version. SCRUM-355 neither publishes pricing, accepts a manual
 override, creates a durable quote ID/expiry, nor stores a booking snapshot.
-Manual override is covered by the separate SCRUM-356 flow below; publication,
-active-version selection, persisted quote lifecycle, and booking snapshots
-remain in SCRUM-357. The environment's
+Manual override is covered by the separate SCRUM-356 flow below, while
+publication, active-version selection, and persisted historical evidence are
+covered by the SCRUM-357 flow. The environment's
 `pricingQuoteShortSnapshot`, fingerprint and total are temporary Postman
 evidence only; their checked-in values remain empty.
 
@@ -218,6 +220,40 @@ cleanup request. Clear `pricingOverrideIdempotencyKey`,
 `pricingLargeOverrideCorrelationId` before intentionally starting a new command;
 retain them only for the exact replay cases. Keep both override flags `false`
 during ordinary smoke runs and never commit populated tokens or evidence.
+
+## Pricing publication and snapshot flow
+
+Publication is append-only. Run **01 Author immutable pricing version** first
+with a new profile; a profile that was already published cannot be republished
+under another command. Both publication preview and publish pass that immutable
+identity as the contract field `rateProfileVersionId`. Keep the authoring,
+calculation, and override flags disabled after their prerequisite data has been
+created, then set
+`runPricingPublication=true` and run **05 Publish pricing and preserve immutable
+snapshots** in order:
+
+1. preview the authored profile and retain its canonical fingerprint plus the
+   current property publication head;
+2. publish with `pricing:approve` using both expected values, then replay the
+   exact command to prove idempotency;
+3. preview a quote without supplying a profile ID, proving the server selects
+   the effective published profile for the complete stay;
+4. create an immutable `booking_quotes` pricing snapshot, replay the exact
+   command, and read the stored evidence without recalculation;
+5. submit a different valid fingerprint and require `STALE_BASE_QUOTE`.
+
+The folder uses the same SHORT staff-created input as the override flow so the
+optional consumption case can match exactly. To exercise it, run folder 04
+immediately beforehand, retain the unexpired `pricingOverrideId`, and also set
+`runPricingOverrideConsumption=true`. The last two requests consume that exact
+override once and prove that an exact idempotent replay still returns the
+original snapshot despite the one-consumer guard.
+
+Clear all `pricingPublication*`, `pricingPublishedQuote*`, `pricingSnapshot*`,
+and `pricingOverrideConsumption*` evidence before intentionally starting a new
+publication command. Leave both SCRUM-357 flags `false` for ordinary smoke
+runs. No cleanup request exists because publications, outbox facts, overrides,
+and pricing snapshots are audit evidence.
 
 ## Payment activation
 
