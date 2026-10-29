@@ -68,9 +68,9 @@
     },
     {
       "id": "authorization.expired-role-grant",
-      "status": "BLOCKED_API",
-      "jiraDependency": "SCRUM-524",
-      "reason": "No safe public test-only API can create or expire a role assignment; direct User DB mutation is intentionally not exposed through Postman."
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-525 / service_user AuthorizationSnapshotExpiryIntegrationTest",
+      "reason": "Role validity is an internal authorization-snapshot boundary; a PostgreSQL integration test proves expired roles and grants are excluded without exposing a public test-only mutation API."
     },
     {
       "id": "export.bulk-access",
