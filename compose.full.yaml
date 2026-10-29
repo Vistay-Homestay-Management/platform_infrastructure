@@ -163,7 +163,7 @@ services:
       BOOKING_GRPC_SERVER_CERT: file:/run/secrets/grpc/server/server.crt
       BOOKING_GRPC_SERVER_KEY: file:/run/secrets/grpc/server/server.key
       BOOKING_GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/server/ca.crt
-      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/payment
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/payment,spiffe://vistay/service/finance
       GRPC_MAXIMUM_DEADLINE: 2s
     expose: ["8080", "9090"]
     volumes:
@@ -190,6 +190,8 @@ services:
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-finance" password="${KAFKA_FINANCE_PASSWORD}";
       USER_GRPC_ADDRESS: static://user:9090
       USER_GRPC_SSL_BUNDLE: grpc-user-client
+      BOOKING_GRPC_ADDRESS: static://booking:9090
+      BOOKING_GRPC_SSL_BUNDLE: grpc-user-client
       GRPC_CLIENT_CERT: file:/run/secrets/grpc/finance.crt
       GRPC_CLIENT_KEY: file:/run/secrets/grpc/finance.key
       GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt

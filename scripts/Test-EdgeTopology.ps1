@@ -240,7 +240,23 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         throw 'Notification may mount only its role-scoped gRPC client bundle read-only.'
     }
 
+    $finance = $configuration.services.finance
+    if ($finance.environment.BOOKING_GRPC_ADDRESS -ne 'static://booking:9090' -or
+        $finance.environment.BOOKING_GRPC_SSL_BUNDLE -ne 'grpc-user-client') {
+        throw 'Finance must resolve Booking authorization records over its mTLS gRPC client channel.'
+    }
+    $financeGrpcMount = @($finance.volumes | Where-Object target -eq '/run/secrets/grpc')
+    if ($financeGrpcMount.Count -ne 1 -or
+        $financeGrpcMount[0].read_only -ne $true -or
+        (Split-Path -Leaf $financeGrpcMount[0].source) -ne 'finance-client') {
+        throw 'Finance may mount only its role-scoped gRPC client bundle read-only.'
+    }
+
     if ($IncludeFullStack) {
+        if ($configuration.services.booking.environment.GRPC_ALLOWED_CALLER_URIS -ne
+            'spiffe://vistay/service/payment,spiffe://vistay/service/finance') {
+            throw 'Booking gRPC must allow only the Payment and Finance SPIFFE callers.'
+        }
         $bookingGrpcMount = @($configuration.services.booking.volumes |
             Where-Object target -eq '/run/secrets/grpc')
         if ($bookingGrpcMount.Count -ne 1 -or
