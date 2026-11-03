@@ -166,7 +166,9 @@ function Get-AllIssues([string]$ProjectKey) {
     $next = $null
     do {
         $jql = [uri]::EscapeDataString("project = $ProjectKey ORDER BY key ASC")
-        $fields = [uri]::EscapeDataString('summary,description,status,issuetype,labels,parent,issuelinks,components,priority,assignee,resolution')
+        $fieldList = 'summary,description,status,issuetype,labels,parent,issuelinks,components,priority,assignee,resolution'
+        if ($script:ModuleFieldId) { $fieldList += ",$($script:ModuleFieldId)" }
+        $fields = [uri]::EscapeDataString($fieldList)
         $suffix = if ($next) { "&nextPageToken=$([uri]::EscapeDataString($next))" } else { '' }
         $result = Invoke-Jira 'GET' "search/jql?jql=$jql&maxResults=100&fields=$fields$suffix"
         $all += @($result.issues)
@@ -206,6 +208,54 @@ function Test-LabelsEqual($Left, $Right) {
     return ((@($Left) | Sort-Object) -join "`n") -ceq ((@($Right) | Sort-Object) -join "`n")
 }
 
+function Get-DesiredModuleNames($Record) {
+    $moduleByRepository = @{
+        'data_warehouse' = 'Service Data Warehouse'
+        'frontend_admin' = 'Frontend Admin'
+        'frontend_customer' = 'Frontend Customer'
+        'frontend_host' = 'Frontend Host'
+        'service_authentication' = 'Service Authentication'
+        'service_booking' = 'Service Booking'
+        'service_finance' = 'Service Finance'
+        'service_media' = 'Service Media'
+        'service_notification' = 'Service Notification'
+        'service_operations' = 'Service Operations'
+        'service_payment' = 'Service Payment'
+        'service_property' = 'Service Property'
+        'service_user' = 'Service User'
+    }
+    return @(@($Record.repositories) | ForEach-Object {
+        if ($moduleByRepository.ContainsKey([string]$_)) { $moduleByRepository[[string]$_] }
+    } | Sort-Object -Unique)
+}
+
+function Get-CurrentModuleOptions($Issue) {
+    if (-not $script:ModuleFieldId) { return @() }
+    $property = $Issue.fields.PSObject.Properties[$script:ModuleFieldId]
+    if ($null -eq $property -or $null -eq $property.Value) { return @() }
+    $flattened = @()
+    foreach ($item in @($property.Value)) {
+        if ($item -is [System.Array]) { $flattened += @($item) }
+        else { $flattened += $item }
+    }
+    return @($flattened | Where-Object {
+        $null -ne $_ -and $_.PSObject.Properties.Name -contains 'value' -and $_.PSObject.Properties.Name -contains 'id'
+    })
+}
+
+function Get-CurrentModuleNames($Issue) {
+    return @((Get-CurrentModuleOptions $Issue) | ForEach-Object { [string]$_.value } | Where-Object { $_ } | Sort-Object -Unique)
+}
+
+function Get-DesiredModuleOptions($Record) {
+    $names = @(Get-DesiredModuleNames $Record)
+    $missing = @($names | Where-Object { -not $script:ModuleOptionByName.ContainsKey([string]$_) })
+    if ($missing.Count -gt 0) {
+        throw "Jira Module option IDs could not be discovered for: $($missing -join ', ')"
+    }
+    return @($names | ForEach-Object { @{ id = [string]$script:ModuleOptionByName[[string]$_].id } })
+}
+
 function Get-LinkedKeys($Issue) {
     return @($Issue.fields.issuelinks | ForEach-Object {
         if ($_.PSObject.Properties.Name -contains 'inwardIssue') { $_.inwardIssue.key }
@@ -235,7 +285,22 @@ $script:Site = ([string]$credential.Site).TrimEnd('/')
 $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$($credential.Email):$plainToken"))
 $script:Headers = @{ Authorization = "Basic $basic"; Accept = 'application/json' }
 try {
+    $allJiraFields = @(Invoke-Jira 'GET' 'field')
+    if ($allJiraFields.Count -eq 1 -and $allJiraFields[0] -is [System.Array]) { $allJiraFields = @($allJiraFields[0]) }
+    $moduleFields = @($allJiraFields | Where-Object { $_.custom -and $_.name -eq 'Module' })
+    if ($moduleFields.Count -gt 1) { throw 'Multiple Jira custom fields named Module were found.' }
+    $script:ModuleFieldId = if ($moduleFields.Count -eq 1) { [string]$moduleFields[0].id } else { $null }
     $currentIssues = @(Get-AllIssues $catalog.projectKey)
+    $script:ModuleOptionByName = @{}
+    if ($script:ModuleFieldId) {
+        foreach ($issue in $currentIssues) {
+            foreach ($option in @(Get-CurrentModuleOptions $issue)) {
+                if ($null -ne $option -and $option.value -and $option.id) {
+                    $script:ModuleOptionByName[[string]$option.value] = $option
+                }
+            }
+        }
+    }
     $issueBySource = @{}
     foreach ($issue in $currentIssues) {
         $source = Get-SourceId $issue
@@ -252,15 +317,25 @@ try {
     foreach ($record in @($catalog.issues)) {
         $current = $issueBySource[[string]$record.sourceId]
         if ($null -eq $current) {
-            $plan.Add([pscustomobject]@{ action = 'create'; sourceId = $record.sourceId; jiraKey = $null; fields = @('summary', 'description', 'labels', 'parent') })
+            $createFields = @('summary', 'description', 'labels', 'parent')
+            if ($script:ModuleFieldId -and @(Get-DesiredModuleNames $record).Count -gt 0) { $createFields += 'Module' }
+            $plan.Add([pscustomobject]@{ action = 'create'; sourceId = $record.sourceId; jiraKey = $null; fields = $createFields })
             continue
         }
-        if (-not $record.manageDescription) { continue }
+        $changed = @()
+        $desiredModuleNames = @(Get-DesiredModuleNames $record)
+        $currentModuleNames = @(Get-CurrentModuleNames $current)
+        if ($script:ModuleFieldId -and $desiredModuleNames.Count -gt 0 -and $currentModuleNames.Count -eq 0) { $changed += 'Module' }
+        if (-not $record.manageDescription) {
+            if ($changed.Count -gt 0) {
+                $plan.Add([pscustomobject]@{ action = 'update'; sourceId = $record.sourceId; jiraKey = $current.key; fields = $changed })
+            }
+            continue
+        }
         $readiness = Get-Readiness $record $issueBySource
         $desiredDescription = New-AdfDescription $record $readiness
         $desiredLabels = Get-DesiredLabels $record @($current.fields.labels) $readiness
         $desiredSpecLabel = Get-SpecLabel $record
-        $changed = @()
         if ([string]$current.fields.summary -cne [string]$record.summary) { $changed += 'summary' }
         if ($desiredSpecLabel -notin @($current.fields.labels) -and (Get-NormalJson $current.fields.description) -cne (Get-NormalJson $desiredDescription)) { $changed += 'description' }
         if (-not (Test-LabelsEqual @($current.fields.labels) $desiredLabels)) { $changed += 'labels' }
@@ -316,9 +391,14 @@ try {
                 description = New-AdfDescription $record $readiness
                 labels = Get-DesiredLabels $record @() $readiness
             }
+            if ($script:ModuleFieldId -and @(Get-DesiredModuleNames $record).Count -gt 0) {
+                $fields[$script:ModuleFieldId] = @(Get-DesiredModuleOptions $record)
+            }
             if ($recordParent) { $fields.parent = @{ key = $issueBySource[$recordParent].key } }
             $created = Invoke-Jira 'POST' 'issue' @{ fields = $fields }
-            $fresh = Invoke-Jira 'GET' "issue/$($created.key)?fields=summary,description,status,issuetype,labels,parent,issuelinks"
+            $freshFields = 'summary,description,status,issuetype,labels,parent,issuelinks'
+            if ($script:ModuleFieldId) { $freshFields += ",$($script:ModuleFieldId)" }
+            $fresh = Invoke-Jira 'GET' "issue/$($created.key)?fields=$freshFields"
             $issueBySource[[string]$record.sourceId] = $fresh
             $comment = [ordered]@{ body = [ordered]@{ type = 'doc'; version = 1; content = @(New-AdfParagraph ("[catalog:v1.2] {0}" -f $record.decisionNoteVi)) } }
             Invoke-Jira 'POST' "issue/$($created.key)/comment" $comment | Out-Null
@@ -328,19 +408,26 @@ try {
         $pendingCreates = $remaining
     }
 
-    foreach ($record in @($catalog.issues | Where-Object { $_.manageDescription })) {
+    foreach ($record in @($catalog.issues)) {
         $current = $issueBySource[[string]$record.sourceId]
-        $readiness = Get-Readiness $record $issueBySource
-        $desiredDescription = New-AdfDescription $record $readiness
-        $desiredLabels = Get-DesiredLabels $record @($current.fields.labels) $readiness
-        $desiredSpecLabel = Get-SpecLabel $record
         $fields = [ordered]@{}
-        if ([string]$current.fields.summary -cne [string]$record.summary) { $fields.summary = $record.summary }
-        if ($desiredSpecLabel -notin @($current.fields.labels) -and (Get-NormalJson $current.fields.description) -cne (Get-NormalJson $desiredDescription)) { $fields.description = $desiredDescription }
-        if (-not (Test-LabelsEqual @($current.fields.labels) $desiredLabels)) { $fields.labels = $desiredLabels }
+        if ($record.manageDescription) {
+            $readiness = Get-Readiness $record $issueBySource
+            $desiredDescription = New-AdfDescription $record $readiness
+            $desiredLabels = Get-DesiredLabels $record @($current.fields.labels) $readiness
+            $desiredSpecLabel = Get-SpecLabel $record
+            if ([string]$current.fields.summary -cne [string]$record.summary) { $fields.summary = $record.summary }
+            if ($desiredSpecLabel -notin @($current.fields.labels) -and (Get-NormalJson $current.fields.description) -cne (Get-NormalJson $desiredDescription)) { $fields.description = $desiredDescription }
+            if (-not (Test-LabelsEqual @($current.fields.labels) $desiredLabels)) { $fields.labels = $desiredLabels }
+        }
+        $desiredModuleNames = @(Get-DesiredModuleNames $record)
+        $currentModuleNames = @(Get-CurrentModuleNames $current)
+        if ($script:ModuleFieldId -and $desiredModuleNames.Count -gt 0 -and $currentModuleNames.Count -eq 0) {
+            $fields[$script:ModuleFieldId] = @(Get-DesiredModuleOptions $record)
+        }
         if ($fields.Count -gt 0) {
             Invoke-Jira 'PUT' "issue/$($current.key)" @{ fields = $fields } | Out-Null
-            if ('roadmap-v1-2' -notin @($current.fields.labels)) {
+            if ($record.manageDescription -and 'roadmap-v1-2' -notin @($current.fields.labels)) {
                 $comment = [ordered]@{ body = [ordered]@{ type = 'doc'; version = 1; content = @(New-AdfParagraph ("[catalog:v1.2] {0}" -f $record.decisionNoteVi)) } }
                 Invoke-Jira 'POST' "issue/$($current.key)/comment" $comment | Out-Null
             }
@@ -377,4 +464,6 @@ finally {
     $plainToken = $null
     $basic = $null
     $script:Headers = $null
+    $script:ModuleFieldId = $null
+    $script:ModuleOptionByName = $null
 }

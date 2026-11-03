@@ -17,6 +17,8 @@ Safety properties:
 - `Source-ID` is the stable identity;
 - no issue/comment deletion and no workflow transition;
 - completed historical issues are not rewritten;
+- an empty Jira `Module` multi-checkbox is populated from the catalog `repositories` list by matching existing option values; existing manual Module selections are preserved;
+- platform-only repositories remain empty until matching Jira Module options exist, instead of being assigned to an unrelated service;
 - comments are added once when catalog v1.2 first manages an open issue;
 - dependency links are added only when absent;
 - a second dry run must produce no create/update/link action.
