@@ -71,6 +71,14 @@ from `platform_contracts`. `Compose-Supergraph.ps1` composes them into the
 checked-in Hive Router supergraph. Update the source commit comment whenever a
 contract is refreshed.
 
+## Jira catalog synchronization
+
+The canonical Jira delivery specification lives in `platform_contracts/docs/jira`.
+Use [`scripts/jira/Sync-JiraCatalog.ps1`](scripts/jira/README.md) in `Validate`,
+`DryRun`, then `Apply` mode. Every non-validation run writes a local backup;
+the post-apply dry run must report zero changes. The tool never deletes issues
+or comments and never transitions workflow status.
+
 ## Remote PostgreSQL operations
 
 Provisioning creates one database per bounded context, separates NOLOGIN
