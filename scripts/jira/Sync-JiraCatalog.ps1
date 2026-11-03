@@ -283,7 +283,8 @@ try {
 
     if ($Mode -eq 'DryRun') {
         $planPath = Join-Path $BackupRoot "plan-$($catalog.projectKey)-$timestamp.json"
-        $plan | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $planPath -Encoding utf8
+        $planJson = if ($plan.Count -eq 0) { '[]' } else { $plan | ConvertTo-Json -Depth 20 }
+        $planJson | Set-Content -LiteralPath $planPath -Encoding utf8
         [pscustomobject]@{ mode = $Mode; backup = $backupPath; plan = $planPath; changes = $plan.Count; byAction = $plan | Group-Object action | ForEach-Object { @{ action = $_.Name; count = $_.Count } } } | ConvertTo-Json -Depth 10
         return
     }
