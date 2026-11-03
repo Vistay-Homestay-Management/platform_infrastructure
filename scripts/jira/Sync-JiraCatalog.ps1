@@ -593,9 +593,9 @@ try {
                 if ($null -eq $from -or $null -eq $to) { continue }
                 if (Test-DependencyLinkExists $from $to ([string]$dependency.relation)) { continue }
                 if ($dependency.relation -eq 'blocks') {
-                    $linkBody = @{ type = @{ name = 'Blocks' }; inwardIssue = @{ key = $to.key }; outwardIssue = @{ key = $from.key } }
-                } elseif ($dependency.relation -eq 'is-blocked-by') {
                     $linkBody = @{ type = @{ name = 'Blocks' }; inwardIssue = @{ key = $from.key }; outwardIssue = @{ key = $to.key } }
+                } elseif ($dependency.relation -eq 'is-blocked-by') {
+                    $linkBody = @{ type = @{ name = 'Blocks' }; inwardIssue = @{ key = $to.key }; outwardIssue = @{ key = $from.key } }
                 } else {
                     $linkBody = @{ type = @{ name = 'Relates' }; inwardIssue = @{ key = $from.key }; outwardIssue = @{ key = $to.key } }
                 }
