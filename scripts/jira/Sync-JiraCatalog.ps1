@@ -5,13 +5,17 @@ param(
     [string]$CatalogPath,
     [string]$CredentialPath,
     [string]$BackupRoot,
+    [string[]]$SourceId,
+    [switch]$AllowCreates,
+    [switch]$ConfirmFullApply,
+    [switch]$SkipLinks,
     [switch]$AllowTransitions
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $CatalogPath) { $CatalogPath = Join-Path $PSScriptRoot '..\..\..\platform_contracts\docs\jira\jira-catalog.v1.2.json' }
+if (-not $CatalogPath) { $CatalogPath = Join-Path $PSScriptRoot '..\..\..\platform_contracts\docs\jira\jira-catalog.v1.3.json' }
 if (-not $CredentialPath) { $CredentialPath = Join-Path $PSScriptRoot '..\..\..\.secrets\jira-api.xml' }
 if (-not $BackupRoot) { $BackupRoot = Join-Path $PSScriptRoot '..\..\..\.backups\jira\sync' }
 
@@ -56,7 +60,7 @@ function New-AdfDescription($Record, [string]$Readiness) {
         [ordered]@{
             type = 'panel'
             attrs = @{ panelType = if ($Readiness -in @('externally-blocked', 'decision-required')) { 'warning' } else { 'info' } }
-            content = @(New-AdfParagraph ("AGENT READINESS: {0} - Catalog schema v1.2. Implement only the stated scope; attach required evidence before Done." -f $Readiness.ToUpperInvariant()))
+            content = @(New-AdfParagraph ("AGENT READINESS: {0} - Catalog schema {1}. Implement only the stated scope; attach required evidence before Done." -f $Readiness.ToUpperInvariant(), $script:CatalogVersion))
         },
         (New-AdfParagraph ("Source-ID: {0}" -f $Record.sourceId)),
         (New-AdfHeading 'Actor / outcome'),
@@ -101,7 +105,8 @@ function New-AdfDescription($Record, [string]$Readiness) {
     $index = 0
     $content += New-AdfBulletList @($Record.acceptanceCriteria | ForEach-Object {
         $index += 1
-        "AC$index - Given $($_.given); When $($_.when); Then $($_.then)."
+        $criterionId = if ($_.PSObject.Properties.Name -contains 'id') { [string]$_.id } else { "AC$index" }
+        "$criterionId - Given $($_.given); When $($_.when); Then $($_.then)."
     })
     $content += @(
         (New-AdfHeading 'Test strategy'),
@@ -113,12 +118,33 @@ function New-AdfDescription($Record, [string]$Readiness) {
         (New-AdfHeading 'Required evidence'),
         (New-AdfBulletList $Record.evidence)
     )
+    if ($Record.PSObject.Properties.Name -contains 'testCases' -and @($Record.testCases).Count -gt 0) {
+        $content += New-AdfHeading 'Executable test and evidence map'
+        $content += New-AdfBulletList @($Record.testCases | ForEach-Object {
+            "$($_.id) [$($_.level)] verifies $(@($_.verifies) -join ', '); command: $($_.command); evidence: $($_.evidence)"
+        })
+    }
     return [ordered]@{ type = 'doc'; version = 1; content = $content }
+}
+
+function ConvertTo-CanonicalObject($Value) {
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string] -or $Value -is [ValueType]) { return $Value }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [System.Collections.IDictionary] -and $Value -isnot [pscustomobject]) {
+        return @($Value | ForEach-Object { ConvertTo-CanonicalObject $_ })
+    }
+    $result = [ordered]@{}
+    $properties = if ($Value -is [System.Collections.IDictionary]) { @($Value.Keys | Sort-Object) } else { @($Value.PSObject.Properties.Name | Sort-Object) }
+    foreach ($name in $properties) {
+        $child = if ($Value -is [System.Collections.IDictionary]) { $Value[$name] } else { $Value.PSObject.Properties[$name].Value }
+        $result[[string]$name] = ConvertTo-CanonicalObject $child
+    }
+    return $result
 }
 
 function Get-NormalJson($Value) {
     if ($null -eq $Value) { return 'null' }
-    return ($Value | ConvertTo-Json -Depth 100 -Compress)
+    return (ConvertTo-CanonicalObject $Value | ConvertTo-Json -Depth 100 -Compress)
 }
 
 function Get-SpecLabel($Record) {
@@ -166,7 +192,7 @@ function Get-AllIssues([string]$ProjectKey) {
     $next = $null
     do {
         $jql = [uri]::EscapeDataString("project = $ProjectKey ORDER BY key ASC")
-        $fieldList = 'summary,description,status,issuetype,labels,parent,issuelinks,components,priority,assignee,resolution'
+        $fieldList = 'summary,description,status,issuetype,labels,parent,issuelinks,components,priority,assignee,resolution,updated'
         if ($script:ModuleFieldId) { $fieldList += ",$($script:ModuleFieldId)" }
         $fields = [uri]::EscapeDataString($fieldList)
         $suffix = if ($next) { "&nextPageToken=$([uri]::EscapeDataString($next))" } else { '' }
@@ -188,8 +214,28 @@ function Get-SourceId($Issue) {
 }
 
 function Get-Readiness($Record, $IssueBySource) {
-    if (@($Record.externalBlockers).Count -gt 0) { return 'externally-blocked' }
-    if ($Record.decisionStatus -eq 'decision-required') { return 'decision-required' }
+    if ($Record.PSObject.Properties.Name -contains 'specStatus') {
+        switch ([string]$Record.specStatus) {
+            'historical' { return 'historical' }
+            'needs-refinement' { return 'needs-refinement' }
+            'decision-required' { return 'decision-required' }
+            'externally-blocked' { return 'externally-blocked' }
+            'refined-parent' { return 'refined-parent' }
+            'executable' {
+                if (-not [bool]$Record.dispatchable) { throw "$($Record.sourceId): executable record is not dispatchable" }
+                if ($Record.PSObject.Properties.Name -contains 'implementationBlockers' -and @($Record.implementationBlockers).Count -gt 0) { return 'externally-blocked' }
+            }
+            default { throw "$($Record.sourceId): unsupported specStatus $($Record.specStatus)" }
+        }
+    }
+    if (-not ($Record.PSObject.Properties.Name -contains 'specStatus') -and @($Record.externalBlockers).Count -gt 0) { return 'externally-blocked' }
+    if ($Record.PSObject.Properties.Name -contains 'decisionStatus' -and $Record.decisionStatus -eq 'decision-required') { return 'decision-required' }
+    if ($Record.PSObject.Properties.Name -contains 'parentSourceId') {
+        $parentRecord = $script:RecordBySource[[string]$Record.parentSourceId]
+        if ($null -ne $parentRecord -and $parentRecord.PSObject.Properties.Name -contains 'specStatus' -and $parentRecord.specStatus -notin @('refined-parent', 'executable', 'historical')) {
+            return 'needs-refinement'
+        }
+    }
     foreach ($dependency in @($Record.dependencies)) {
         if ($dependency.relation -notin @('is-blocked-by', 'remediates')) { continue }
         $target = $IssueBySource[[string]$dependency.sourceId]
@@ -199,7 +245,7 @@ function Get-Readiness($Record, $IssueBySource) {
 }
 
 function Get-DesiredLabels($Record, $CurrentLabels, [string]$Readiness) {
-    $managed = @('agent-ready', 'agent-ready-after-dependencies', 'decision-required', 'externally-blocked', 'needs-refinement', 'agent-not-ready', 'roadmap-v1-2')
+    $managed = @('agent-ready', 'agent-ready-after-dependencies', 'decision-required', 'externally-blocked', 'needs-refinement', 'refined-parent', 'historical', 'agent-not-ready', 'roadmap-v1-2', 'roadmap-v1-3')
     $preserved = @($CurrentLabels | Where-Object { $_ -notin $managed -and $_ -notlike 'source-*' -and $_ -notlike 'owner-*' -and $_ -notlike 'spec-*' })
     return @($preserved + @($Record.labels) + $Readiness + (Get-SpecLabel $Record) | Sort-Object -Unique)
 }
@@ -273,6 +319,22 @@ function Get-LinkedKeys($Issue) {
     })
 }
 
+function Test-DependencyLinkExists($FromIssue, $ToIssue, [string]$Relation) {
+    foreach ($link in @($FromIssue.fields.issuelinks)) {
+        $typeName = [string]$link.type.name
+        if ($Relation -in @('blocks', 'is-blocked-by')) {
+            if ($typeName -ne 'Blocks') { continue }
+            if ($Relation -eq 'blocks' -and $link.PSObject.Properties.Name -contains 'outwardIssue' -and $link.outwardIssue.key -eq $ToIssue.key) { return $true }
+            if ($Relation -eq 'is-blocked-by' -and $link.PSObject.Properties.Name -contains 'inwardIssue' -and $link.inwardIssue.key -eq $ToIssue.key) { return $true }
+        }
+        elseif ($Relation -in @('relates-to', 'remediates') -and $typeName -eq 'Relates') {
+            if (($link.PSObject.Properties.Name -contains 'outwardIssue' -and $link.outwardIssue.key -eq $ToIssue.key) -or
+                ($link.PSObject.Properties.Name -contains 'inwardIssue' -and $link.inwardIssue.key -eq $ToIssue.key)) { return $true }
+        }
+    }
+    return $false
+}
+
 $CatalogPath = Resolve-FullPath $CatalogPath
 $CredentialPath = Resolve-FullPath $CredentialPath
 $BackupRoot = Resolve-FullPath $BackupRoot
@@ -280,12 +342,33 @@ if (-not (Test-Path -LiteralPath $CatalogPath -PathType Leaf)) { throw "Catalog 
 if (-not (Test-Path -LiteralPath $CredentialPath -PathType Leaf)) { throw "Credential not found: $CredentialPath" }
 
 $catalog = Get-Content -LiteralPath $CatalogPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$script:CatalogVersion = [string]$catalog.schemaVersion
+$script:RecordBySource = @{}
+foreach ($record in @($catalog.issues)) {
+    $catalogSourceId = [string]$record.sourceId
+    if ($script:RecordBySource.ContainsKey($catalogSourceId)) { throw "Duplicate catalog Source-ID: $catalogSourceId" }
+    $script:RecordBySource[$catalogSourceId] = $record
+}
 $validator = Join-Path (Split-Path (Split-Path $CatalogPath -Parent) -Parent) '..\scripts\validate-jira-catalog.mjs'
 $validator = Resolve-FullPath $validator
 & node $validator $CatalogPath
 if ($LASTEXITCODE -ne 0) { throw 'Catalog validation failed.' }
+$requestedSourceIds = @($SourceId | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+$managedRecords = if ($requestedSourceIds.Count -gt 0) {
+    $unknownSources = @($requestedSourceIds | Where-Object { -not $script:RecordBySource.ContainsKey([string]$_) })
+    if ($unknownSources.Count -gt 0) { throw "Requested Source-ID is absent from catalog: $($unknownSources -join ', ')" }
+    @($requestedSourceIds | ForEach-Object { $script:RecordBySource[[string]$_] })
+} else {
+    @($catalog.issues)
+}
+if ($Mode -eq 'Apply' -and $requestedSourceIds.Count -eq 0 -and -not $ConfirmFullApply) {
+    throw 'Full-catalog Apply is disabled by default. Supply up to five -SourceId values for a canary, or explicitly use -ConfirmFullApply.'
+}
+if ($Mode -eq 'Apply' -and $requestedSourceIds.Count -gt 5 -and -not $ConfirmFullApply) {
+    throw 'Canary Apply accepts at most five Source-IDs unless -ConfirmFullApply is explicitly supplied.'
+}
 if ($Mode -eq 'Validate') {
-    [pscustomobject]@{ mode = $Mode; catalog = $CatalogPath; issueCount = @($catalog.issues).Count; valid = $true } | ConvertTo-Json
+    [pscustomobject]@{ mode = $Mode; catalog = $CatalogPath; issueCount = @($catalog.issues).Count; selectedCount = @($managedRecords).Count; valid = $true } | ConvertTo-Json
     return
 }
 
@@ -330,7 +413,18 @@ try {
     $issueBySource = @{}
     foreach ($issue in $currentIssues) {
         $source = Get-SourceId $issue
-        if ($source) { $issueBySource[$source] = $issue }
+        if ($source) {
+            if ($issueBySource.ContainsKey([string]$source)) { throw "Duplicate live Jira Source-ID $source on $($issueBySource[$source].key) and $($issue.key)" }
+            $issueBySource[$source] = $issue
+        }
+    }
+    $unmanagedLive = @($issueBySource.Keys | Where-Object { -not $script:RecordBySource.ContainsKey([string]$_) } | Sort-Object)
+    if ($unmanagedLive.Count -gt 0) { throw "Live Jira contains Source-IDs absent from catalog: $($unmanagedLive -join ', ')" }
+    foreach ($record in @($managedRecords)) {
+        $current = $issueBySource[[string]$record.sourceId]
+        if ($null -ne $current -and $record.PSObject.Properties.Name -contains 'jiraKey' -and [string]$record.jiraKey -ne [string]$current.key) {
+            throw "$($record.sourceId): catalog jiraKey $($record.jiraKey) does not match live key $($current.key)"
+        }
     }
 
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -340,19 +434,23 @@ try {
         ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $backupPath -Encoding utf8
 
     $plan = [System.Collections.Generic.List[object]]::new()
-    foreach ($record in @($catalog.issues)) {
+    foreach ($record in @($managedRecords)) {
         $current = $issueBySource[[string]$record.sourceId]
         if ($null -eq $current) {
+            if (-not $AllowCreates) { throw "$($record.sourceId): missing from Jira; rerun with -AllowCreates only after reviewing the catalog identity and parent" }
             $createFields = @('summary', 'description', 'labels', 'parent')
             if ($script:ModuleFieldId -and @(Get-DesiredModuleNames $record).Count -gt 0) { $createFields += 'Module' }
             $plan.Add([pscustomobject]@{ action = 'create'; sourceId = $record.sourceId; jiraKey = $null; fields = $createFields })
             continue
         }
         $changed = @()
+        if ([string]$current.fields.issuetype.name -cne [string]$record.issueType) { $changed += 'issueType' }
+        $desiredParentKey = if ($record.PSObject.Properties.Name -contains 'parentSourceId') { [string]$issueBySource[[string]$record.parentSourceId].key } else { $null }
+        $currentParentKey = if ($current.fields.PSObject.Properties.Name -contains 'parent' -and $null -ne $current.fields.parent) { [string]$current.fields.parent.key } else { $null }
+        if ($desiredParentKey -cne $currentParentKey) { $changed += 'parent' }
         $desiredModuleNames = @(Get-DesiredModuleNames $record)
         $currentModuleNames = @(Get-CurrentModuleNames $current)
-        $missingModuleNames = @($desiredModuleNames | Where-Object { $_ -notin $currentModuleNames })
-        if ($script:ModuleFieldId -and $missingModuleNames.Count -gt 0) { $changed += 'Module' }
+        if ($script:ModuleFieldId -and (($desiredModuleNames -join "`n") -cne ($currentModuleNames -join "`n"))) { $changed += 'Module' }
         if (-not $record.manageDescription) {
             if ($changed.Count -gt 0) {
                 $plan.Add([pscustomobject]@{ action = 'update'; sourceId = $record.sourceId; jiraKey = $current.key; fields = $changed })
@@ -364,21 +462,22 @@ try {
         $desiredLabels = Get-DesiredLabels $record @($current.fields.labels) $readiness
         $desiredSpecLabel = Get-SpecLabel $record
         if ([string]$current.fields.summary -cne [string]$record.summary) { $changed += 'summary' }
-        if ($desiredSpecLabel -notin @($current.fields.labels) -and (Get-NormalJson $current.fields.description) -cne (Get-NormalJson $desiredDescription)) { $changed += 'description' }
+        if ((Get-NormalJson $current.fields.description) -cne (Get-NormalJson $desiredDescription)) { $changed += 'description' }
         if (-not (Test-LabelsEqual @($current.fields.labels) $desiredLabels)) { $changed += 'labels' }
         if ($changed.Count -gt 0) {
             $plan.Add([pscustomobject]@{ action = 'update'; sourceId = $record.sourceId; jiraKey = $current.key; fields = $changed })
         }
     }
 
-    foreach ($record in @($catalog.issues)) {
-        foreach ($dependency in @($record.dependencies)) {
-            $from = $issueBySource[[string]$record.sourceId]
-            $to = $issueBySource[[string]$dependency.sourceId]
-            if ($null -eq $from -or $null -eq $to) { continue }
-            $linkedKeys = Get-LinkedKeys $from
-            if ($to.key -notin $linkedKeys) {
-                $plan.Add([pscustomobject]@{ action = 'link'; sourceId = $record.sourceId; jiraKey = $from.key; fields = @("$($dependency.relation):$($dependency.sourceId)") })
+    if (-not $SkipLinks) {
+        foreach ($record in @($managedRecords)) {
+            foreach ($dependency in @($record.dependencies)) {
+                $from = $issueBySource[[string]$record.sourceId]
+                $to = $issueBySource[[string]$dependency.sourceId]
+                if ($null -eq $from -or $null -eq $to) { continue }
+                if (-not (Test-DependencyLinkExists $from $to ([string]$dependency.relation))) {
+                    $plan.Add([pscustomobject]@{ action = 'link'; sourceId = $record.sourceId; jiraKey = $from.key; fields = @("$($dependency.relation):$($dependency.sourceId)") })
+                }
             }
         }
     }
@@ -391,13 +490,25 @@ try {
         return
     }
 
+    # Abort the entire apply if any issue changed after the backup/plan read.
+    $latestIssues = @(Get-AllIssues $catalog.projectKey)
+    $latestByKey = @{}
+    foreach ($issue in $latestIssues) { $latestByKey[[string]$issue.key] = $issue }
+    $concurrentChanges = @($currentIssues | Where-Object {
+        $latest = $latestByKey[[string]$_.key]
+        $null -eq $latest -or [string]$latest.fields.updated -ne [string]$_.fields.updated
+    } | ForEach-Object { $_.key })
+    if ($concurrentChanges.Count -gt 0) {
+        throw "Jira changed after backup; no mutations were applied. Review and retry: $($concurrentChanges -join ', ')"
+    }
+
     $project = Invoke-Jira 'GET' "project/$($catalog.projectKey)"
     $issueTypeResponse = Invoke-Jira 'GET' "issuetype/project?projectId=$($project.id)&maxResults=100"
     $issueTypes = if ($issueTypeResponse.PSObject.Properties.Name -contains 'values') { @($issueTypeResponse.values) } else { @($issueTypeResponse) }
     $typeByName = @{}
     foreach ($type in $issueTypes) { $typeByName[[string]$type.name] = $type }
 
-    $pendingCreates = @($catalog.issues | Where-Object { -not $issueBySource.ContainsKey([string]$_.sourceId) })
+    $pendingCreates = @($managedRecords | Where-Object { -not $issueBySource.ContainsKey([string]$_.sourceId) })
     while ($pendingCreates.Count -gt 0) {
         $progress = 0
         $remaining = @()
@@ -427,7 +538,7 @@ try {
             if ($script:ModuleFieldId) { $freshFields += ",$($script:ModuleFieldId)" }
             $fresh = Invoke-Jira 'GET' "issue/$($created.key)?fields=$freshFields"
             $issueBySource[[string]$record.sourceId] = $fresh
-            $comment = [ordered]@{ body = [ordered]@{ type = 'doc'; version = 1; content = @(New-AdfParagraph ("[catalog:v1.2] {0}" -f $record.decisionNoteVi)) } }
+            $comment = [ordered]@{ body = [ordered]@{ type = 'doc'; version = 1; content = @(New-AdfParagraph ("[catalog:v$($script:CatalogVersion)] {0}" -f $record.decisionNoteVi)) } }
             Invoke-Jira 'POST' "issue/$($created.key)/comment" $comment | Out-Null
             $progress += 1
         }
@@ -435,28 +546,37 @@ try {
         $pendingCreates = $remaining
     }
 
-    foreach ($record in @($catalog.issues)) {
+    foreach ($record in @($managedRecords)) {
         $current = $issueBySource[[string]$record.sourceId]
         $fields = [ordered]@{}
+        if ([string]$current.fields.issuetype.name -cne [string]$record.issueType) {
+            $jiraType = $typeByName[[string]$record.issueType]
+            if ($null -eq $jiraType) { throw "$($record.sourceId): Jira issue type is unavailable: $($record.issueType)" }
+            $fields.issuetype = @{ id = [string]$jiraType.id }
+        }
+        $desiredParentKey = if ($record.PSObject.Properties.Name -contains 'parentSourceId') { [string]$issueBySource[[string]$record.parentSourceId].key } else { $null }
+        $currentParentKey = if ($current.fields.PSObject.Properties.Name -contains 'parent' -and $null -ne $current.fields.parent) { [string]$current.fields.parent.key } else { $null }
+        if ($desiredParentKey -cne $currentParentKey) {
+            $fields.parent = if ($desiredParentKey) { @{ key = $desiredParentKey } } else { $null }
+        }
         if ($record.manageDescription) {
             $readiness = Get-Readiness $record $issueBySource
             $desiredDescription = New-AdfDescription $record $readiness
             $desiredLabels = Get-DesiredLabels $record @($current.fields.labels) $readiness
             $desiredSpecLabel = Get-SpecLabel $record
             if ([string]$current.fields.summary -cne [string]$record.summary) { $fields.summary = $record.summary }
-            if ($desiredSpecLabel -notin @($current.fields.labels) -and (Get-NormalJson $current.fields.description) -cne (Get-NormalJson $desiredDescription)) { $fields.description = $desiredDescription }
+            if ((Get-NormalJson $current.fields.description) -cne (Get-NormalJson $desiredDescription)) { $fields.description = $desiredDescription }
             if (-not (Test-LabelsEqual @($current.fields.labels) $desiredLabels)) { $fields.labels = $desiredLabels }
         }
         $desiredModuleNames = @(Get-DesiredModuleNames $record)
         $currentModuleNames = @(Get-CurrentModuleNames $current)
-        $missingModuleNames = @($desiredModuleNames | Where-Object { $_ -notin $currentModuleNames })
-        if ($script:ModuleFieldId -and $missingModuleNames.Count -gt 0) {
-            $fields[$script:ModuleFieldId] = @(Get-MergedModuleOptions $record $current)
+        if ($script:ModuleFieldId -and (($desiredModuleNames -join "`n") -cne ($currentModuleNames -join "`n"))) {
+            $fields[$script:ModuleFieldId] = @(Get-DesiredModuleOptions $record)
         }
         if ($fields.Count -gt 0) {
             Invoke-Jira 'PUT' "issue/$($current.key)" @{ fields = $fields } | Out-Null
             if ($record.manageDescription -and 'roadmap-v1-2' -notin @($current.fields.labels)) {
-                $comment = [ordered]@{ body = [ordered]@{ type = 'doc'; version = 1; content = @(New-AdfParagraph ("[catalog:v1.2] {0}" -f $record.decisionNoteVi)) } }
+                $comment = [ordered]@{ body = [ordered]@{ type = 'doc'; version = 1; content = @(New-AdfParagraph ("[catalog:v$($script:CatalogVersion)] {0}" -f $record.decisionNoteVi)) } }
                 Invoke-Jira 'POST' "issue/$($current.key)/comment" $comment | Out-Null
             }
         }
@@ -465,21 +585,22 @@ try {
     $refreshed = @(Get-AllIssues $catalog.projectKey)
     $issueBySource = @{}
     foreach ($issue in $refreshed) { $source = Get-SourceId $issue; if ($source) { $issueBySource[$source] = $issue } }
-    foreach ($record in @($catalog.issues)) {
-        foreach ($dependency in @($record.dependencies)) {
-            $from = $issueBySource[[string]$record.sourceId]
-            $to = $issueBySource[[string]$dependency.sourceId]
-            if ($null -eq $from -or $null -eq $to) { continue }
-            $linkedKeys = Get-LinkedKeys $from
-            if ($to.key -in $linkedKeys) { continue }
-            if ($dependency.relation -eq 'blocks') {
-                $linkBody = @{ type = @{ name = 'Blocks' }; inwardIssue = @{ key = $to.key }; outwardIssue = @{ key = $from.key } }
-            } elseif ($dependency.relation -eq 'is-blocked-by') {
-                $linkBody = @{ type = @{ name = 'Blocks' }; inwardIssue = @{ key = $from.key }; outwardIssue = @{ key = $to.key } }
-            } else {
-                $linkBody = @{ type = @{ name = 'Relates' }; inwardIssue = @{ key = $from.key }; outwardIssue = @{ key = $to.key } }
+    if (-not $SkipLinks) {
+        foreach ($record in @($managedRecords)) {
+            foreach ($dependency in @($record.dependencies)) {
+                $from = $issueBySource[[string]$record.sourceId]
+                $to = $issueBySource[[string]$dependency.sourceId]
+                if ($null -eq $from -or $null -eq $to) { continue }
+                if (Test-DependencyLinkExists $from $to ([string]$dependency.relation)) { continue }
+                if ($dependency.relation -eq 'blocks') {
+                    $linkBody = @{ type = @{ name = 'Blocks' }; inwardIssue = @{ key = $to.key }; outwardIssue = @{ key = $from.key } }
+                } elseif ($dependency.relation -eq 'is-blocked-by') {
+                    $linkBody = @{ type = @{ name = 'Blocks' }; inwardIssue = @{ key = $from.key }; outwardIssue = @{ key = $to.key } }
+                } else {
+                    $linkBody = @{ type = @{ name = 'Relates' }; inwardIssue = @{ key = $from.key }; outwardIssue = @{ key = $to.key } }
+                }
+                Invoke-Jira 'POST' 'issueLink' $linkBody | Out-Null
             }
-            Invoke-Jira 'POST' 'issueLink' $linkBody | Out-Null
         }
     }
 
@@ -494,4 +615,6 @@ finally {
     $script:Headers = $null
     $script:ModuleFieldId = $null
     $script:ModuleOptionByName = $null
+    $script:CatalogVersion = $null
+    $script:RecordBySource = $null
 }
