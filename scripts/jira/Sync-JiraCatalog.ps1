@@ -210,10 +210,13 @@ function Test-LabelsEqual($Left, $Right) {
 
 function Get-DesiredModuleNames($Record) {
     $moduleByRepository = @{
+        'cross-service' = 'Cross-service'
         'data_warehouse' = 'Service Data Warehouse'
         'frontend_admin' = 'Frontend Admin'
         'frontend_customer' = 'Frontend Customer'
         'frontend_host' = 'Frontend Host'
+        'platform_contracts' = 'Platform Contracts'
+        'platform_infrastructure' = 'Platform Infrastructure'
         'service_authentication' = 'Service Authentication'
         'service_booking' = 'Service Booking'
         'service_finance' = 'Service Finance'
@@ -256,6 +259,13 @@ function Get-DesiredModuleOptions($Record) {
     return @($names | ForEach-Object { @{ id = [string]$script:ModuleOptionByName[[string]$_].id } })
 }
 
+function Get-MergedModuleOptions($Record, $Issue) {
+    $byId = @{}
+    foreach ($option in @(Get-CurrentModuleOptions $Issue)) { $byId[[string]$option.id] = @{ id = [string]$option.id } }
+    foreach ($option in @(Get-DesiredModuleOptions $Record)) { $byId[[string]$option.id] = $option }
+    return @($byId.Values | Sort-Object { [string]$_.id })
+}
+
 function Get-LinkedKeys($Issue) {
     return @($Issue.fields.issuelinks | ForEach-Object {
         if ($_.PSObject.Properties.Name -contains 'inwardIssue') { $_.inwardIssue.key }
@@ -293,6 +303,22 @@ try {
     $currentIssues = @(Get-AllIssues $catalog.projectKey)
     $script:ModuleOptionByName = @{}
     if ($script:ModuleFieldId) {
+        $editMetaIssue = @($currentIssues | Select-Object -First 1)
+        if ($editMetaIssue.Count -eq 1) {
+            try {
+                $editMeta = Invoke-Jira 'GET' "issue/$($editMetaIssue[0].key)/editmeta"
+                $editMetaProperty = $editMeta.fields.PSObject.Properties[$script:ModuleFieldId]
+                if ($null -ne $editMetaProperty) {
+                    foreach ($option in @($editMetaProperty.Value.allowedValues)) {
+                        if ($null -ne $option -and $option.value -and $option.id) {
+                            $script:ModuleOptionByName[[string]$option.value] = $option
+                        }
+                    }
+                }
+            } catch {
+                Write-Warning "Jira Module allowed values could not be read from edit metadata; falling back to observed issue values. $($_.Exception.Message)"
+            }
+        }
         foreach ($issue in $currentIssues) {
             foreach ($option in @(Get-CurrentModuleOptions $issue)) {
                 if ($null -ne $option -and $option.value -and $option.id) {
@@ -325,7 +351,8 @@ try {
         $changed = @()
         $desiredModuleNames = @(Get-DesiredModuleNames $record)
         $currentModuleNames = @(Get-CurrentModuleNames $current)
-        if ($script:ModuleFieldId -and $desiredModuleNames.Count -gt 0 -and $currentModuleNames.Count -eq 0) { $changed += 'Module' }
+        $missingModuleNames = @($desiredModuleNames | Where-Object { $_ -notin $currentModuleNames })
+        if ($script:ModuleFieldId -and $missingModuleNames.Count -gt 0) { $changed += 'Module' }
         if (-not $record.manageDescription) {
             if ($changed.Count -gt 0) {
                 $plan.Add([pscustomobject]@{ action = 'update'; sourceId = $record.sourceId; jiraKey = $current.key; fields = $changed })
@@ -422,8 +449,9 @@ try {
         }
         $desiredModuleNames = @(Get-DesiredModuleNames $record)
         $currentModuleNames = @(Get-CurrentModuleNames $current)
-        if ($script:ModuleFieldId -and $desiredModuleNames.Count -gt 0 -and $currentModuleNames.Count -eq 0) {
-            $fields[$script:ModuleFieldId] = @(Get-DesiredModuleOptions $record)
+        $missingModuleNames = @($desiredModuleNames | Where-Object { $_ -notin $currentModuleNames })
+        if ($script:ModuleFieldId -and $missingModuleNames.Count -gt 0) {
+            $fields[$script:ModuleFieldId] = @(Get-MergedModuleOptions $record $current)
         }
         if ($fields.Count -gt 0) {
             Invoke-Jira 'PUT' "issue/$($current.key)" @{ fields = $fields } | Out-Null

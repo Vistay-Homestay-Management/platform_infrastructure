@@ -16,9 +16,9 @@ Safety properties:
 - every non-validation run writes a full pre-change snapshot under `.backups/jira/sync`;
 - `Source-ID` is the stable identity;
 - no issue/comment deletion and no workflow transition;
-- completed historical issues are not rewritten;
-- an empty Jira `Module` multi-checkbox is populated from the catalog `repositories` list by matching existing option values; existing manual Module selections are preserved;
-- platform-only repositories remain empty until matching Jira Module options exist, instead of being assigned to an unrelated service;
+- completed historical descriptions, statuses, and delivery evidence are not rewritten; missing Module metadata may still be completed from the canonical repository mapping;
+- Jira `Module` selections are completed from the catalog `repositories` list by matching allowed option values; existing manual Module selections are preserved and only missing selections are added;
+- platform and cross-service repositories map to `Platform Contracts`, `Platform Infrastructure`, and `Cross-service`; synchronization fails closed when a required option does not exist;
 - comments are added once when catalog v1.2 first manages an open issue;
 - dependency links are added only when absent;
 - a second dry run must produce no create/update/link action.
