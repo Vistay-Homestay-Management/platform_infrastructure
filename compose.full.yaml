@@ -167,9 +167,9 @@ services:
       USER_GRPC_SSL_BUNDLE: grpc-user-client
       PROPERTY_GRPC_ADDRESS: static://property:9090
       PROPERTY_GRPC_SSL_BUNDLE: grpc-user-client
-      GRPC_CLIENT_CERT: file:/run/secrets/grpc/booking.crt
-      GRPC_CLIENT_KEY: file:/run/secrets/grpc/booking.key
-      GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt
+      GRPC_CLIENT_CERT: file:/run/secrets/grpc/client/booking.crt
+      GRPC_CLIENT_KEY: file:/run/secrets/grpc/client/booking.key
+      GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/client/ca.crt
       GRPC_SERVER_PORT: 9090
       GRPC_TLS_ENABLED: "true"
       GRPC_SSL_BUNDLE: grpc-booking-server
@@ -182,7 +182,7 @@ services:
     expose: ["8080", "9090"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
-      - ./certs/generated/grpc/booking-client:/run/secrets/grpc:ro
+      - ./certs/generated/grpc/booking-client:/run/secrets/grpc/client:ro
       - ./certs/generated/grpc/booking-server:/run/secrets/grpc/server:ro
     depends_on:
       <<: *service-dependencies

@@ -42,6 +42,7 @@ jobs:
           ./scripts/Test-PostmanInventory.ps1
           ./scripts/Test-PostmanInventoryCommands.ps1
           ./scripts/Test-PostmanInventoryManagement.ps1
+          ./scripts/Test-PostmanInventoryLiveRunner.ps1
       - name: Validate realm activation and token contract
         shell: pwsh
         run: ./scripts/Test-KeycloakContract.ps1 -EnvFile .env.example

@@ -273,32 +273,54 @@ or running the collection with repository defaults skips every live request. CI
 validates the request shape and JavaScript assertions; it does not claim that an
 optional seeded scenario ran against a live stack.
 
-There is intentionally no generic SQL block fixture in this repository. Direct
-ad-hoc inserts could bypass Booking's revision updates, repeatable-read behavior,
-and blocking-range exclusion invariant. No public block-write API or shared seed
-script exists yet: keep the flags `false` until a disposable fixture has been
-prepared through a Booking-owned integration-test/controlled seed path after all
-service migrations have run. Never seed shared or production data. Use the same
-half-open request range in the environment (`2027-06-10` through `2027-06-13`)
-and populate these IDs:
+The repository now includes a controlled, repeatable local fixture. It writes
+Property topology only to `vistay_property_db`, writes blocks/revisions only to
+`vistay_booking_db`, runs after service migrations, and is hard-restricted to
+the `vistay-postgres-1` container. It resets only UUIDs reserved below, preserves
+the database overlap constraints/triggers, and must never be used for shared or
+production data:
+
+```powershell
+./scripts/Seed-InventoryE2E.ps1
+```
+
+The complete live runner seeds those fixtures, prompts for three PKCE tokens as
+secure strings, creates a runtime Postman environment under the OS temporary
+directory, runs the observation, management, and command collections with
+Newman 6.2.1, then removes that environment even on failure:
+
+```powershell
+./scripts/Run-PostmanInventoryE2E.ps1
+```
+
+The tokens represent (1) an allowed actor with `inventory:read` and
+`inventory:block`, (2) an authenticated foreign-branch actor, and (3) an actor
+without `inventory:block`. The runner intentionally leaves destructive
+dependency-failure injection disabled. Run those two observation requests
+manually as described below. Checked-in flags and token values remain safe and
+empty.
+
+The fixture uses the half-open request range `2027-06-10` through `2027-06-13`
+and these stable IDs:
 
 | Variable | Required disposable fixture state |
 | --- | --- |
-| `inventoryAvailablePropertyId` | Active Property-to-Branch membership and no overlap |
-| `inventoryBookingBlockedPropertyId` | Overlapping `BOOKING/TENTATIVE` block |
-| `inventoryMaintenanceBlockedPropertyId` | Overlapping `MAINTENANCE/ACTIVE` block |
-| `inventoryChannelBlockedPropertyId` | Overlapping `CHANNEL/ACTIVE` block with a nonblank normalized provider and opaque external reference |
-| `inventoryHistoryOnlyPropertyId` | Overlapping `RELEASED` and `CANCELLED` rows only |
-| `inventoryAdjacentPropertyId` | One block ending exactly at check-in and one starting exactly at checkout; neither overlaps |
-| `inventoryUnmappedPropertyId` | Existing exact unit with no active Property-to-Branch membership |
-| `inventoryForeignPropertyId` | Active unit in a branch different from the branch-bound caller |
+| `inventoryAvailablePropertyId` | `61000000-0000-4000-8000-000000000001`; active membership and revision 0 |
+| `inventoryBookingBlockedPropertyId` | `61000000-0000-4000-8000-000000000002`; overlapping `BOOKING/TENTATIVE` block |
+| `inventoryMaintenanceBlockedPropertyId` | `61000000-0000-4000-8000-000000000003`; overlapping `MAINTENANCE/ACTIVE` block |
+| `inventoryChannelBlockedPropertyId` | `61000000-0000-4000-8000-000000000004`; overlapping `CHANNEL/ACTIVE` block with sanitized CHANNEX provider |
+| `inventoryHistoryOnlyPropertyId` | `61000000-0000-4000-8000-000000000005`; overlapping `RELEASED` and `CANCELLED` rows only |
+| `inventoryAdjacentPropertyId` | `61000000-0000-4000-8000-000000000006`; blocks end at check-in and start at checkout |
+| `inventoryForeignPropertyId` | `61000000-0000-4000-8000-000000000007`; active unit in the foreign branch |
+| `inventoryUnmappedPropertyId` | `61000000-0000-4000-8000-000000000008`; existing exact unit without a membership |
 | `inventoryMissingPropertyId` | Valid UUID that does not exist; the checked-in value is reserved for this local test |
+| `inventoryCommandPropertyId` | `61000000-0000-4000-8000-000000000009`; mapped, empty, disposable command unit |
+| `inventoryManagementPropertyId` | `61000000-0000-4000-8000-000000000010`; four current/history rows for pagination |
 
-For the available fixture, also copy its authoritative branch, Property
-membership version, and current Booking inventory revision into
-`inventoryExpectedBranchId`, `inventoryExpectedMembershipVersion`, and
-`inventoryExpectedRevision`. The positive assertion compares these exact values;
-it does not accept merely nonempty metadata.
+The allowed branch is `60000000-0000-4000-8000-000000000001`, its fixture
+membership version is `7`, the available/command revision is `0`, and the
+management revision is `4`. The runner injects these values only into its
+temporary environment; the checked-in environment remains empty.
 
 Obtain tokens through Backoffice PKCE. `inventoryAccessToken` must represent an
 active account with `inventory:read` and either explicit `ALL` for an allowed

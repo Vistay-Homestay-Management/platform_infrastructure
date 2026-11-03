@@ -317,12 +317,27 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
             'vistay.booking.inventory-block-changed.v1') {
             throw 'Booking must publish the versioned inventory-block-changed topic.'
         }
-        $bookingGrpcMount = @($configuration.services.booking.volumes |
-            Where-Object target -eq '/run/secrets/grpc')
-        if ($bookingGrpcMount.Count -ne 1 -or
-            $bookingGrpcMount[0].read_only -ne $true -or
-            (Split-Path -Leaf $bookingGrpcMount[0].source) -ne 'booking-client') {
-            throw 'Booking may mount only its role-scoped gRPC client bundle read-only.'
+        $bookingGrpcClientMount = @($configuration.services.booking.volumes |
+            Where-Object target -eq '/run/secrets/grpc/client')
+        $bookingGrpcServerMount = @($configuration.services.booking.volumes |
+            Where-Object target -eq '/run/secrets/grpc/server')
+        if ($bookingGrpcClientMount.Count -ne 1 -or
+            $bookingGrpcClientMount[0].read_only -ne $true -or
+            (Split-Path -Leaf $bookingGrpcClientMount[0].source) -ne 'booking-client') {
+            throw 'Booking must mount only its role-scoped gRPC client bundle at the read-only client path.'
+        }
+        if ($bookingGrpcServerMount.Count -ne 1 -or
+            $bookingGrpcServerMount[0].read_only -ne $true -or
+            (Split-Path -Leaf $bookingGrpcServerMount[0].source) -ne 'booking-server') {
+            throw 'Booking must mount only its role-scoped gRPC server bundle at the read-only server path.'
+        }
+        if ($configuration.services.booking.environment.GRPC_CLIENT_CERT -ne
+                'file:/run/secrets/grpc/client/booking.crt' -or
+            $configuration.services.booking.environment.GRPC_CLIENT_KEY -ne
+                'file:/run/secrets/grpc/client/booking.key' -or
+            $configuration.services.booking.environment.GRPC_SERVER_CA_CERT -ne
+                'file:/run/secrets/grpc/client/ca.crt') {
+            throw 'Booking gRPC client material must resolve only from its isolated client mount.'
         }
     }
 
