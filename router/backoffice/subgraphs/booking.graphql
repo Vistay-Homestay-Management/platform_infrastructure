@@ -5,6 +5,7 @@ type Query {
   booking(id: ID!): Booking! @authenticated
   bookings(status: String, limit: Int = 50): [Booking!]! @authenticated
   propertyAvailability(input: PropertyAvailabilityInput!): PropertyAvailabilityObservation! @authenticated
+  inventoryBlocks(input: InventoryBlockManagementInput!): InventoryBlockManagementPage! @authenticated
   propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @authenticated
   propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @authenticated
   calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!): PropertyPriceQuote! @authenticated
@@ -71,6 +72,44 @@ type InventoryBlockCommandResult {
   propertyMembershipVersion: String!
   occurredAt: String!
   releasedAt: String
+}
+
+input InventoryBlockManagementInput {
+  propertyId: ID!
+  fromDate: String
+  toDateExclusive: String
+  types: [InventoryBlockType!] = []
+  statuses: [InventoryBlockStatus!] = []
+  first: Int = 50
+  after: String
+}
+
+type InventoryBlockManagementPage {
+  nodes: [InventoryBlockManagementNode!]!
+  pageInfo: InventoryBlockPageInfo!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+}
+
+type InventoryBlockManagementNode {
+  inventoryBlockId: ID!
+  propertyId: ID!
+  type: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  reason: String
+  channelProvider: String
+  blockVersion: String!
+  createdAt: String!
+  updatedAt: String!
+  releasedAt: String
+}
+
+type InventoryBlockPageInfo {
+  hasNextPage: Boolean!
+  endCursor: String
 }
 
 type PropertyRateProfileVersion {

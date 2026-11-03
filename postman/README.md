@@ -7,6 +7,7 @@ Import these files into Postman:
 - `ViStay-Pricing.postman_collection.json`
 - `ViStay-Inventory.postman_collection.json`
 - `ViStay-Inventory-Commands.postman_collection.json`
+- `ViStay-Inventory-Management.postman_collection.json`
 - `ViStay-Local.postman_environment.json`
 
 Select the **ViStay Local** environment before sending requests.
@@ -52,6 +53,7 @@ Enable an optional group only after supplying its required variables:
 | `runInventoryAuthorizationScenarios=true` | Verify unauthenticated, foreign-branch, revoked, and scope-without-partition denial | Dedicated empty/revoked/foreign-branch tokens and fixture assignments described below |
 | `runInventoryDependencyScenarios=true` | Verify Property and User/Authorization fail-closed errors | Run one request while only its named local dependency is stopped; restore it immediately |
 | `runInventoryCommandFlow=true` | Observe, create/replay, reject stale/reused/forbidden/invalid commands, then release/replay one block | Disposable mapped property/range plus distinct allowed and forbidden Backoffice tokens described below |
+| `runInventoryManagementFlow=true` | List current/history inventory blocks with deterministic keyset pagination and authorization-negative checks | A mapped property with at least three blocks, exact expected branch/membership evidence, and allowed/foreign-branch tokens |
 
 Never commit populated secret values or an exported environment containing
 tokens.

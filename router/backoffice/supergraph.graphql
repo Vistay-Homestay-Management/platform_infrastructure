@@ -305,6 +305,52 @@ type InventoryBlockCommandResult
   releasedAt: String
 }
 
+input InventoryBlockManagementInput
+  @join__type(graph: BOOKING)
+{
+  propertyId: ID!
+  fromDate: String
+  toDateExclusive: String
+  types: [InventoryBlockType!] = []
+  statuses: [InventoryBlockStatus!] = []
+  first: Int = 50
+  after: String
+}
+
+type InventoryBlockManagementNode
+  @join__type(graph: BOOKING)
+{
+  inventoryBlockId: ID!
+  propertyId: ID!
+  type: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  reason: String
+  channelProvider: String
+  blockVersion: String!
+  createdAt: String!
+  updatedAt: String!
+  releasedAt: String
+}
+
+type InventoryBlockManagementPage
+  @join__type(graph: BOOKING)
+{
+  nodes: [InventoryBlockManagementNode!]!
+  pageInfo: InventoryBlockPageInfo!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+}
+
+type InventoryBlockPageInfo
+  @join__type(graph: BOOKING)
+{
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
 enum InventoryBlockStatus
   @join__type(graph: BOOKING)
 {
@@ -812,6 +858,7 @@ type Query
   booking(id: ID!): Booking! @join__field(graph: BOOKING) @authenticated
   bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
   propertyAvailability(input: PropertyAvailabilityInput!): PropertyAvailabilityObservation! @join__field(graph: BOOKING) @authenticated
+  inventoryBlocks(input: InventoryBlockManagementInput!): InventoryBlockManagementPage! @join__field(graph: BOOKING) @authenticated
   propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
   propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @join__field(graph: BOOKING) @authenticated
   calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!): PropertyPriceQuote! @join__field(graph: BOOKING) @authenticated
