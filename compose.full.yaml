@@ -37,6 +37,30 @@ x-spring-service-healthcheck: &spring-service-healthcheck
   retries: 12
 
 services:
+  mailpit:
+    image: ${MAILPIT_IMAGE:-axllent/mailpit:v1.26.2}
+    profiles: ["epic01", "full"]
+    environment:
+      MP_SMTP_BIND_ADDR: 0.0.0.0:1025
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+      MP_MAX_MESSAGES: "1000"
+    expose:
+      - "1025"
+      - "8025"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks: [vistay]
+
+  keycloak:
+    depends_on:
+      mailpit:
+        condition: service_started
+
   authentication:
     container_name: service-authentication
     build: ../service_authentication
