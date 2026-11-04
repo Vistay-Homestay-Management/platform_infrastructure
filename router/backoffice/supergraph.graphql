@@ -1,0 +1,948 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.4", for: EXECUTION)
+  @link(url: "https://specs.apollo.dev/authenticated/v0.1", for: SECURITY)
+  @link(url: "https://specs.apollo.dev/requiresScopes/v0.1", for: SECURITY)
+{
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+directive @authenticated on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+directive @join__directive(graphs: [join__Graph!], name: String!, args: join__DirectiveArguments) repeatable on SCHEMA | OBJECT | INTERFACE | FIELD_DEFINITION
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean, overrideLabel: String) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+directive @requiresScopes(scopes: [[requiresScopes__Scope!]!]!) on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+enum AccountType
+  @join__type(graph: USER)
+{
+  CUSTOMER @join__enumValue(graph: USER)
+  ADMIN @join__enumValue(graph: USER)
+  HOST @join__enumValue(graph: USER)
+}
+
+type AppliedPropertyPriceOverride
+  @join__type(graph: BOOKING)
+{
+  baseQuote: PropertyPriceQuote!
+  manualOverride: PricingManualOverride!
+  finalPrecedence: [String!]!
+  finalComponents: [PriceComponent!]!
+  finalLodgingAmount: String!
+  finalCommissionAmount: String!
+  finalTotalAmount: String!
+}
+
+input ApplyPropertyPriceOverrideInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  quote: CalculatePropertyPriceQuoteInput!
+  expectedBaseQuoteFingerprint: String!
+  targetLodgingAmount: String!
+  reason: String!
+  correlationId: String!
+}
+
+type AuthorizationAssignment
+  @join__type(graph: USER)
+{
+  id: ID!
+  roleCode: String!
+  validUntil: String
+  grants: [EffectiveGrant!]!
+}
+
+type AuthorizationAuditEvent
+  @join__type(graph: USER)
+{
+  id: ID!
+  actorSubjectId: ID
+  targetSubjectId: ID
+  action: String!
+  reason: String!
+  correlationId: String
+  createdAt: String!
+}
+
+type AuthorizationChangeRequest
+  @join__type(graph: USER)
+{
+  id: ID!
+  targetSubjectId: ID!
+  requestedBySubjectId: ID!
+  reviewedBySubjectId: ID
+  changeType: String!
+  status: AuthorizationChangeStatus!
+  roleCode: String!
+  reason: String!
+  reviewReason: String
+  expiresAt: String!
+  createdAt: String!
+}
+
+enum AuthorizationChangeStatus
+  @join__type(graph: USER)
+{
+  PENDING @join__enumValue(graph: USER)
+  APPROVED @join__enumValue(graph: USER)
+  REJECTED @join__enumValue(graph: USER)
+  EXPIRED @join__enumValue(graph: USER)
+  STALE @join__enumValue(graph: USER)
+}
+
+type AuthorizationPermissionPolicy
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  allowedScopes: [DataScope!]!
+  defaultScopes: [DataScope!]!
+}
+
+type AuthorizationRole
+  @join__type(graph: USER)
+{
+  code: String!
+  displayName: String!
+  accountType: AccountType!
+  policies: [AuthorizationPermissionPolicy!]!
+}
+
+type AuthorizationSubject
+  @join__type(graph: USER)
+{
+  id: ID!
+  accountType: AccountType!
+  accountId: ID!
+  profileId: ID!
+  active: Boolean!
+  authorizationVersion: Int!
+  assignments: [AuthorizationAssignment!]!
+  effectiveGrants: [EffectiveGrant!]!
+}
+
+type BackofficeViewer
+  @join__type(graph: USER)
+{
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  profileVersion: Int!
+  roles: [String!]!
+  permissions: [String!]!
+  grants: [EffectiveGrant!]!
+  authorizationVersion: Int!
+}
+
+type Booking
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  bookingCode: String!
+  propertyId: ID!
+  status: String!
+  checkInDate: String!
+  checkOutDate: String!
+  totalAmount: String
+  currency: String!
+}
+
+input CalculatePropertyPriceQuoteInput
+  @join__type(graph: BOOKING)
+{
+  rateProfileVersionId: ID!
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+  guestCount: Int! = 1
+  channel: PricingChannel!
+  staffCreated: Boolean! = false
+  commissionBps: Int
+}
+
+input CancelPaymentIntentInput
+  @join__type(graph: PAYMENT)
+{
+  paymentIntentId: ID!
+  expectedVersion: Int!
+  reason: String!
+}
+
+input CreateInventoryBlockInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  propertyId: ID!
+  blockType: OperatorInventoryBlockType!
+  startDate: String!
+  endDateExclusive: String!
+  expectedInventoryRevision: String!
+  reason: String!
+  correlationId: String!
+}
+
+input CreatePropertyPriceQuoteSnapshotInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  quote: PublishedPropertyPriceQuoteInput!
+  expectedRateProfileVersionId: ID!
+  expectedBaseQuoteFingerprint: String!
+  manualOverrideId: ID
+  reason: String!
+  correlationId: String!
+}
+
+input CreatePropertyRateProfileVersionInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  propertyId: ID!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  baseDailyRate: String!
+  mediumDailyFactorBps: Int = 7000
+  longDailyFactorBps: Int = 5500
+  checkInTime: String = "14:00"
+  checkOutTime: String = "12:00"
+  turnoverMinutes: Int = 120
+  quoteTtlMinutes: Int = 15
+  commissionDefaultBps: Int = 500
+  commissionMaxBps: Int = 2000
+  reason: String!
+  correlationId: String
+  rules: [PricingRuleVersionInput!]! = []
+}
+
+input CreateVietQrPaymentIntentInput
+  @join__type(graph: PAYMENT)
+{
+  financePaymentRequestId: ID!
+  idempotencyKey: String!
+}
+
+"""
+An opaque non-negative decimal sequence. Clients must persist and return it
+unchanged; its numeric representation is an implementation detail.
+"""
+scalar Cursor
+  @join__type(graph: NOTIFICATION)
+
+enum DataScope
+  @join__type(graph: USER)
+{
+  SELF @join__enumValue(graph: USER)
+  OWN @join__enumValue(graph: USER)
+  ASSIGNED @join__enumValue(graph: USER)
+  ALL @join__enumValue(graph: USER)
+}
+
+"""An RFC 3339 timestamp with an offset."""
+scalar DateTime
+  @join__type(graph: NOTIFICATION)
+
+type EffectiveGrant
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  scopes: [DataScope!]!
+}
+
+type InventoryAvailabilityOverlap
+  @join__type(graph: BOOKING)
+{
+  type: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  channelProvider: String
+}
+
+enum InventoryBlockCommandAction
+  @join__type(graph: BOOKING)
+{
+  CREATED @join__enumValue(graph: BOOKING)
+  RELEASED @join__enumValue(graph: BOOKING)
+}
+
+type InventoryBlockCommandResult
+  @join__type(graph: BOOKING)
+{
+  commandId: ID!
+  idempotencyKey: String!
+  requestHash: String!
+  inventoryBlockId: ID!
+  action: InventoryBlockCommandAction!
+  propertyId: ID!
+  blockType: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  blockVersion: String!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+  occurredAt: String!
+  releasedAt: String
+}
+
+input InventoryBlockManagementInput
+  @join__type(graph: BOOKING)
+{
+  propertyId: ID!
+  fromDate: String
+  toDateExclusive: String
+  types: [InventoryBlockType!] = []
+  statuses: [InventoryBlockStatus!] = []
+  first: Int = 50
+  after: String
+}
+
+type InventoryBlockManagementNode
+  @join__type(graph: BOOKING)
+{
+  inventoryBlockId: ID!
+  propertyId: ID!
+  type: InventoryBlockType!
+  status: InventoryBlockStatus!
+  startDate: String!
+  endDateExclusive: String!
+  reason: String
+  channelProvider: String
+  blockVersion: String!
+  createdAt: String!
+  updatedAt: String!
+  releasedAt: String
+}
+
+type InventoryBlockManagementPage
+  @join__type(graph: BOOKING)
+{
+  nodes: [InventoryBlockManagementNode!]!
+  pageInfo: InventoryBlockPageInfo!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+}
+
+type InventoryBlockPageInfo
+  @join__type(graph: BOOKING)
+{
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+enum InventoryBlockStatus
+  @join__type(graph: BOOKING)
+{
+  TENTATIVE @join__enumValue(graph: BOOKING)
+  ACTIVE @join__enumValue(graph: BOOKING)
+  RELEASED @join__enumValue(graph: BOOKING)
+  CANCELLED @join__enumValue(graph: BOOKING)
+}
+
+enum InventoryBlockType
+  @join__type(graph: BOOKING)
+{
+  BOOKING @join__enumValue(graph: BOOKING)
+  MAINTENANCE @join__enumValue(graph: BOOKING)
+  CLEANING @join__enumValue(graph: BOOKING)
+  OWNER_USE @join__enumValue(graph: BOOKING)
+  MANUAL @join__enumValue(graph: BOOKING)
+  CHANNEL @join__enumValue(graph: BOOKING)
+}
+
+scalar join__DirectiveArguments
+
+scalar join__FieldSet
+
+enum join__Graph {
+  BOOKING @join__graph(name: "booking", url: "http://service-booking:8080/graphql")
+  NOTIFICATION @join__graph(name: "notification", url: "http://service-notification:8080/graphql")
+  PAYMENT @join__graph(name: "payment", url: "http://service-payment:8080/graphql")
+  USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type Mutation
+  @join__type(graph: BOOKING)
+  @join__type(graph: PAYMENT)
+  @join__type(graph: USER)
+{
+  createInventoryBlock(input: CreateInventoryBlockInput!): InventoryBlockCommandResult! @join__field(graph: BOOKING) @authenticated
+  releaseInventoryBlock(input: ReleaseInventoryBlockInput!): InventoryBlockCommandResult! @join__field(graph: BOOKING) @authenticated
+  createPropertyRateProfileVersion(input: CreatePropertyRateProfileVersionInput!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
+  applyPropertyPriceOverride(input: ApplyPropertyPriceOverrideInput!): AppliedPropertyPriceOverride! @join__field(graph: BOOKING) @authenticated
+  publishPropertyRateProfileVersion(input: PublishPropertyRateProfileVersionInput!): PricingProfilePublication! @join__field(graph: BOOKING) @authenticated
+  createPropertyPriceQuoteSnapshot(input: CreatePropertyPriceQuoteSnapshotInput!): PropertyPriceQuoteSnapshot! @join__field(graph: BOOKING) @authenticated
+  createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+  cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
+  requestAuthorizationChange(input: RequestAuthorizationChangeInput!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
+  approveAuthorizationChange(id: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
+  rejectAuthorizationChange(id: ID!, reason: String!): AuthorizationChangeRequest! @join__field(graph: USER) @authenticated
+  revokeRoleAssignment(assignmentId: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  reduceAuthorizationScopes(input: ReduceAuthorizationScopesInput!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  establishSecondApprover(targetSubjectId: ID!, reason: String!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+}
+
+type Notification
+  @join__type(graph: NOTIFICATION)
+{
+  id: ID!
+  category: NotificationCategory!
+  title: String!
+  body: String!
+  channels: [NotificationChannel!]!
+  createdAt: DateTime!
+  readAt: DateTime
+}
+
+enum NotificationCategory
+  @join__type(graph: NOTIFICATION)
+{
+  WELCOME @join__enumValue(graph: NOTIFICATION)
+  SECURITY @join__enumValue(graph: NOTIFICATION)
+}
+
+enum NotificationChannel
+  @join__type(graph: NOTIFICATION)
+{
+  IN_APP @join__enumValue(graph: NOTIFICATION)
+  EMAIL @join__enumValue(graph: NOTIFICATION)
+  PUSH @join__enumValue(graph: NOTIFICATION)
+}
+
+type NotificationStreamEvent
+  @join__type(graph: NOTIFICATION)
+{
+  cursor: Cursor!
+  notification: Notification!
+}
+
+enum OperatorInventoryBlockType
+  @join__type(graph: BOOKING)
+{
+  MAINTENANCE @join__enumValue(graph: BOOKING)
+  CLEANING @join__enumValue(graph: BOOKING)
+  OWNER_USE @join__enumValue(graph: BOOKING)
+  MANUAL @join__enumValue(graph: BOOKING)
+}
+
+type PaymentIntent
+  @join__type(graph: PAYMENT, key: "id")
+{
+  id: ID!
+  intentCode: String!
+  financePaymentRequestId: ID!
+  amount: String!
+  currency: String!
+  status: PaymentIntentStatus!
+  qrPayload: String
+  qrImageDataUri: String
+  expiresAt: String!
+  version: Int!
+}
+
+enum PaymentIntentStatus
+  @join__type(graph: PAYMENT)
+{
+  CREATED @join__enumValue(graph: PAYMENT)
+  QR_READY @join__enumValue(graph: PAYMENT)
+  PENDING @join__enumValue(graph: PAYMENT)
+  SUCCEEDED @join__enumValue(graph: PAYMENT)
+  FAILED @join__enumValue(graph: PAYMENT)
+  EXPIRED @join__enumValue(graph: PAYMENT)
+  CANCELLED @join__enumValue(graph: PAYMENT)
+}
+
+input PermissionScopeOverrideInput
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  scopes: [DataScope!]!
+}
+
+type PersonalProfile
+  @join__type(graph: USER)
+{
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  version: Int!
+  updatedAt: String!
+  replayed: Boolean!
+}
+
+type PriceComponent
+  @join__type(graph: BOOKING)
+{
+  order: Int!
+  type: PriceComponentType!
+  code: String!
+  chargeDate: String
+  ruleCode: String
+  quantity: Int!
+  unitAmount: String!
+  factorBps: Int
+  amount: String!
+}
+
+enum PriceComponentType
+  @join__type(graph: BOOKING)
+{
+  PROFILE_BASE_RATE @join__enumValue(graph: BOOKING)
+  FIXED_DAILY_RATE @join__enumValue(graph: BOOKING)
+  STAY_PRODUCT_RATE @join__enumValue(graph: BOOKING)
+  RULE_DISCOUNT @join__enumValue(graph: BOOKING)
+  RULE_SURCHARGE @join__enumValue(graph: BOOKING)
+  MANUAL_OVERRIDE @join__enumValue(graph: BOOKING)
+  COMMISSION @join__enumValue(graph: BOOKING)
+}
+
+enum PricingActionType
+  @join__type(graph: BOOKING)
+{
+  FIXED_DAILY_RATE @join__enumValue(graph: BOOKING)
+  PERCENT_DISCOUNT @join__enumValue(graph: BOOKING)
+  FIXED_DISCOUNT @join__enumValue(graph: BOOKING)
+  PERCENT_SURCHARGE @join__enumValue(graph: BOOKING)
+  FIXED_SURCHARGE @join__enumValue(graph: BOOKING)
+}
+
+enum PricingChannel
+  @join__type(graph: BOOKING)
+{
+  ADMIN_PORTAL @join__enumValue(graph: BOOKING)
+  CUSTOMER_WEB @join__enumValue(graph: BOOKING)
+  OTA @join__enumValue(graph: BOOKING)
+}
+
+type PricingManualOverride
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  idempotencyKey: String!
+  requestHash: String!
+  propertyId: ID!
+  rateProfileVersionId: ID!
+  baseQuoteFingerprint: String!
+  calculationVersion: String!
+  beforeLodgingAmount: String!
+  targetLodgingAmount: String!
+  adjustmentAmount: String!
+  reductionBps: Int!
+  commissionBps: Int!
+  beforeCommissionAmount: String!
+  afterCommissionAmount: String!
+  beforeTotalAmount: String!
+  afterTotalAmount: String!
+  currency: String!
+  largeApprovalRequired: Boolean!
+  actorAdminAccountId: ID!
+  actorAdminProfileId: ID!
+  authorizationVersion: String!
+  overridePermissionCode: String!
+  overrideScopeType: PricingOverrideScopeType!
+  overridePartitionId: ID
+  largeApprovalAuthorizationVersion: String
+  largeApprovalPermissionCode: String
+  largeApprovalScopeType: PricingOverrideScopeType
+  largeApprovalPartitionId: ID
+  reason: String!
+  correlationId: String!
+  quoteTtlMinutes: Int!
+  createdAt: String!
+  expiresAt: String!
+}
+
+enum PricingOverrideScopeType
+  @join__type(graph: BOOKING)
+{
+  ALL @join__enumValue(graph: BOOKING)
+  BRANCH @join__enumValue(graph: BOOKING)
+}
+
+type PricingProfilePublication
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  idempotencyKey: String!
+  requestHash: String!
+  propertyId: ID!
+  rateProfileVersionId: ID!
+  previousPublicationId: ID
+  publicationRevision: String!
+  profileFingerprint: String!
+  snapshotSchemaVersion: String!
+  actorAdminAccountId: ID!
+  actorAdminProfileId: ID!
+  authorizationVersion: String!
+  permissionCode: String!
+  scopeType: PricingOverrideScopeType!
+  partitionId: ID
+  reason: String!
+  correlationId: String!
+  publishedAt: String!
+  profile: PropertyRateProfileVersion!
+}
+
+type PricingProfilePublicationPreview
+  @join__type(graph: BOOKING)
+{
+  profile: PropertyRateProfileVersion!
+  profileFingerprint: String!
+  published: Boolean!
+  currentPublication: PricingProfilePublication
+  publication: PricingProfilePublication
+}
+
+type PricingRuleEvaluation
+  @join__type(graph: BOOKING)
+{
+  order: Int!
+  chargeDate: String
+  ruleId: ID!
+  code: String!
+  priority: Int!
+  status: PricingRuleEvaluationStatus!
+  reason: String!
+  actionType: PricingActionType!
+  actionValue: String!
+  beforeAmount: String!
+  adjustmentAmount: String!
+  afterAmount: String!
+}
+
+enum PricingRuleEvaluationStatus
+  @join__type(graph: BOOKING)
+{
+  MATCHED @join__enumValue(graph: BOOKING)
+  SKIPPED @join__enumValue(graph: BOOKING)
+  SUPERSEDED @join__enumValue(graph: BOOKING)
+}
+
+type PricingRuleVersion
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  code: String!
+  name: String!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  priority: Int!
+  daysOfWeek: [Int!]!
+  channels: [PricingChannel!]!
+  minimumStayDays: Int
+  maximumStayDays: Int
+  minimumGuests: Int
+  maximumGuests: Int
+  actionType: PricingActionType!
+  actionValue: String!
+}
+
+input PricingRuleVersionInput
+  @join__type(graph: BOOKING)
+{
+  code: String!
+  name: String!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  priority: Int!
+  daysOfWeek: [Int!]! = []
+  channels: [PricingChannel!]! = []
+  minimumStayDays: Int
+  maximumStayDays: Int
+  minimumGuests: Int
+  maximumGuests: Int
+  actionType: PricingActionType!
+  actionValue: String!
+}
+
+input PropertyAvailabilityInput
+  @join__type(graph: BOOKING)
+{
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+}
+
+type PropertyAvailabilityObservation
+  @join__type(graph: BOOKING)
+{
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+  available: Boolean!
+  inventoryRevision: String!
+  branchId: ID!
+  propertyMembershipVersion: String!
+  observedAt: String!
+  overlaps: [InventoryAvailabilityOverlap!]!
+}
+
+type PropertyPriceFinalQuote
+  @join__type(graph: BOOKING)
+{
+  baseQuote: PropertyPriceQuote!
+  manualOverride: PricingManualOverride
+  precedence: [String!]!
+  components: [PriceComponent!]!
+  lodgingAmount: String!
+  commissionAmount: String!
+  totalAmount: String!
+}
+
+type PropertyPriceQuote
+  @join__type(graph: BOOKING)
+{
+  fingerprint: String!
+  calculationVersion: String!
+  roundingPolicy: String!
+  rateProfileVersionId: ID!
+  propertyId: ID!
+  profileVersion: Int!
+  checkInDate: String!
+  checkOutDate: String!
+  guestCount: Int!
+  channel: PricingChannel!
+  staffCreated: Boolean!
+  stayProduct: StayProduct!
+  stayDays: Int!
+  baseDailyRate: String!
+  dailyFactorBps: Int!
+  productDailyRate: String!
+  baseLodgingAmount: String!
+  lodgingBeforeAdjustments: String!
+  discountAmount: String!
+  surchargeAmount: String!
+  lodgingAmount: String!
+  requestedCommissionBps: Int
+  commissionDefaultBps: Int!
+  commissionMaxBps: Int!
+  commissionBaseAmount: String!
+  commissionBps: Int!
+  commissionAmount: String!
+  totalAmount: String!
+  currency: String!
+  precedence: [String!]!
+  evaluatedRules: [PricingRuleEvaluation!]!
+  components: [PriceComponent!]!
+}
+
+type PropertyPriceQuoteSnapshot
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  idempotencyKey: String!
+  requestHash: String!
+  propertyId: ID!
+  pricingPublicationId: ID!
+  rateProfileVersionId: ID!
+  manualOverrideId: ID
+  baseQuoteFingerprint: String!
+  calculationVersion: String!
+  publication: PricingProfilePublication!
+  baseQuote: PropertyPriceQuote!
+  finalQuote: PropertyPriceFinalQuote!
+  actorAdminAccountId: ID!
+  actorAdminProfileId: ID!
+  authorizationVersion: String!
+  permissionCode: String!
+  scopeType: PricingOverrideScopeType!
+  partitionId: ID
+  reason: String!
+  correlationId: String!
+  status: String!
+  currency: String!
+  createdAt: String!
+  expiresAt: String!
+}
+
+type PropertyRateProfileVersion
+  @join__type(graph: BOOKING)
+{
+  id: ID!
+  propertyId: ID!
+  version: Int!
+  effectiveFrom: String!
+  effectiveToExclusive: String
+  baseDailyRate: String!
+  mediumDailyFactorBps: Int!
+  longDailyFactorBps: Int!
+  currency: String!
+  checkInTime: String!
+  checkOutTime: String!
+  turnoverMinutes: Int!
+  quoteTtlMinutes: Int!
+  commissionDefaultBps: Int!
+  commissionMaxBps: Int!
+  reason: String!
+  authoredByAdminAccountId: ID!
+  correlationId: String
+  authoredAt: String!
+  rules: [PricingRuleVersion!]!
+}
+
+input PublishedPropertyPriceQuoteInput
+  @join__type(graph: BOOKING)
+{
+  propertyId: ID!
+  checkInDate: String!
+  checkOutDate: String!
+  guestCount: Int! = 1
+  channel: PricingChannel!
+  staffCreated: Boolean! = false
+  commissionBps: Int
+}
+
+type PublishedPropertyPriceQuotePreview
+  @join__type(graph: BOOKING)
+{
+  publication: PricingProfilePublication!
+  baseQuote: PropertyPriceQuote!
+}
+
+input PublishPropertyRateProfileVersionInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  rateProfileVersionId: ID!
+  expectedProfileFingerprint: String!
+  expectedCurrentPublicationId: ID
+  reason: String!
+  correlationId: String!
+}
+
+type Query
+  @join__type(graph: BOOKING)
+  @join__type(graph: NOTIFICATION)
+  @join__type(graph: PAYMENT)
+  @join__type(graph: USER)
+{
+  booking(id: ID!): Booking! @join__field(graph: BOOKING) @authenticated
+  bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
+  propertyAvailability(input: PropertyAvailabilityInput!): PropertyAvailabilityObservation! @join__field(graph: BOOKING) @authenticated
+  inventoryBlocks(input: InventoryBlockManagementInput!): InventoryBlockManagementPage! @join__field(graph: BOOKING) @authenticated
+  propertyRateProfileVersion(id: ID!): PropertyRateProfileVersion! @join__field(graph: BOOKING) @authenticated
+  propertyRateProfileVersions(propertyId: ID!): [PropertyRateProfileVersion!]! @join__field(graph: BOOKING) @authenticated
+  calculatePropertyPriceQuote(input: CalculatePropertyPriceQuoteInput!): PropertyPriceQuote! @join__field(graph: BOOKING) @authenticated
+  previewPropertyRateProfilePublication(rateProfileVersionId: ID!): PricingProfilePublicationPreview! @join__field(graph: BOOKING) @authenticated
+  activePropertyRateProfileVersion(propertyId: ID!, checkInDate: String!, checkOutDate: String!): PricingProfilePublication! @join__field(graph: BOOKING) @authenticated
+  previewPublishedPropertyPriceQuote(input: PublishedPropertyPriceQuoteInput!): PublishedPropertyPriceQuotePreview! @join__field(graph: BOOKING) @authenticated
+  propertyPriceQuoteSnapshot(id: ID!): PropertyPriceQuoteSnapshot! @join__field(graph: BOOKING) @authenticated
+  paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
+  viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
+  myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
+  authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @join__field(graph: USER) @authenticated
+  authorizationSubject(subjectId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  authorizationChangeRequests(status: AuthorizationChangeStatus = PENDING): [AuthorizationChangeRequest!]! @join__field(graph: USER) @authenticated
+  authorizationAudit(targetSubjectId: ID): [AuthorizationAuditEvent!]! @join__field(graph: USER) @authenticated
+}
+
+input ReduceAuthorizationScopesInput
+  @join__type(graph: USER)
+{
+  assignmentId: ID!
+  retainedScopes: [RetainedPermissionScopesInput!]!
+  reason: String!
+  expectedAuthorizationVersion: Int!
+}
+
+input ReleaseInventoryBlockInput
+  @join__type(graph: BOOKING)
+{
+  idempotencyKey: String!
+  propertyId: ID!
+  inventoryBlockId: ID!
+  expectedInventoryRevision: String!
+  reason: String!
+  correlationId: String!
+}
+
+input RequestAuthorizationChangeInput
+  @join__type(graph: USER)
+{
+  targetSubjectId: ID!
+  roleCode: String!
+  scopeOverrides: [PermissionScopeOverrideInput!] = []
+  validUntil: String
+  reason: String!
+  expectedAuthorizationVersion: Int!
+  idempotencyKey: String!
+}
+
+scalar requiresScopes__Scope
+
+input RetainedPermissionScopesInput
+  @join__type(graph: USER)
+{
+  permissionCode: String!
+  scopes: [DataScope!]!
+}
+
+enum StayProduct
+  @join__type(graph: BOOKING)
+{
+  SHORT @join__enumValue(graph: BOOKING)
+  MEDIUM @join__enumValue(graph: BOOKING)
+  LONG @join__enumValue(graph: BOOKING)
+}
+
+type Subscription
+  @join__type(graph: NOTIFICATION)
+{
+  """
+  Streams this viewer's durable inbox strictly after `afterCursor`. A null
+  cursor starts at the earliest retained entry. Delivery is at least once, so
+  clients deduplicate by `notification.id` and persist each received cursor.
+  """
+  notificationStream(afterCursor: Cursor): NotificationStreamEvent! @authenticated @requiresScopes(scopes: [["notifications:read"]])
+}
+
+input UpdateMyProfileInput
+  @join__type(graph: USER)
+{
+  displayName: String!
+  contactPhone: String
+  avatarMediaId: ID
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
+}

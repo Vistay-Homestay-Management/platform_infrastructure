@@ -12,6 +12,12 @@ SELECT format(
     :'app_role'
 ) \gexec
 SELECT format(
+    'REVOKE ALL ON TABLE app.flyway_schema_history FROM %I',
+    :'app_role'
+)
+WHERE to_regclass('app.flyway_schema_history') IS NOT NULL
+\gexec
+SELECT format(
     'ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I',
     :'app_role'
 ) \gexec

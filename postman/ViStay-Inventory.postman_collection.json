@@ -1,0 +1,338 @@
+{
+  "info": {
+    "_postman_id": "10d444b3-dfcc-4bf5-8992-600a0d3ba977",
+    "name": "ViStay Inventory Observation",
+    "description": "Read-only SCRUM-358 exact-unit availability verification. Every live scenario is opt-in and no request writes inventory.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "let payload = null;",
+          "try { payload = pm.response.json(); } catch (ignored) { payload = null; }",
+          "if (payload) {",
+          "  const forbiddenKeys = new Set(['blockId', 'inventoryBlockId', 'bookingId', 'holdId', 'channelExternalBlockId', 'channelExternalReference', 'externalBlockReference', 'externalReference', 'reason', 'notes', 'actorId', 'actorIdentity', 'guestId', 'guestName', 'customerId', 'customerName', 'hostId', 'hostName', 'totalAmount', 'commercialAmount', 'credential', 'credentials', 'accessToken', 'refreshToken', 'authorizationEvidence']);",
+          "  const found = [];",
+          "  const visit = (value) => {",
+          "    if (Array.isArray(value)) { value.forEach(visit); return; }",
+          "    if (!value || typeof value !== 'object') { return; }",
+          "    Object.entries(value).forEach(([key, child]) => { if (forbiddenKeys.has(key)) { found.push(key); } visit(child); });",
+          "  };",
+          "  visit(payload);",
+          "  pm.test('response exposes no private inventory fields', () => pm.expect(found).to.eql([]));",
+          "  const errorText = JSON.stringify(payload.errors || []);",
+          "  pm.test('errors expose no dependency address, SQL, bearer token, or secret', () => {",
+          "    pm.expect(errorText).not.to.match(/(?:jdbc:|postgres(?:ql)?:|https?:\\/\\/|bearer\\s+|select\\s+.+\\s+from|insert\\s+into|update\\s+.+\\s+set|delete\\s+from|password|client_secret)/i);",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Seeded read-only observations",
+      "description": "Optional fixtures only. These requests never create, update, or delete inventory blocks.",
+      "item": [
+        {
+          "name": "Available exact unit",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventorySeededScenarios') !== 'true') { pm.execution.skipRequest(); }"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = pm.response.json();",
+                  "const value = payload.data && payload.data.propertyAvailability;",
+                  "pm.test('mapped unit is available with revision evidence', () => {",
+                  "  pm.expect(payload.errors).to.be.undefined;",
+                  "  pm.expect(value.propertyId).to.eql(pm.environment.get('inventoryAvailablePropertyId'));",
+                  "  pm.expect(value.available).to.eql(true);",
+                  "  pm.expect(value.overlaps).to.eql([]);",
+                  "  pm.expect(value.inventoryRevision).to.eql(pm.environment.get('inventoryExpectedRevision'));",
+                  "  pm.expect(value.inventoryRevision).to.match(/^(0|[1-9]\\d*)$/);",
+                  "  pm.expect(value.propertyMembershipVersion).to.eql(pm.environment.get('inventoryExpectedMembershipVersion'));",
+                  "  pm.expect(value.propertyMembershipVersion).to.match(/^(0|[1-9]\\d*)$/);",
+                  "  pm.expect(value.branchId).to.eql(pm.environment.get('inventoryExpectedBranchId'));",
+                  "  pm.expect(value.observedAt).to.match(/^\\d{4}-\\d{2}-\\d{2}T.*Z$/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "X-CSRF-Token", "value": "inventory-observation", "type": "text" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}",
+            "description": "Requires a mapped exact unit with no overlapping inventory rows in the requested half-open interval."
+          }
+        },
+        {
+          "name": "BOOKING tentative block is unavailable",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventorySeededScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const payload = pm.response.json(); const value = payload.data && payload.data.propertyAvailability;",
+              "pm.test('BOOKING TENTATIVE overlap blocks availability', () => { pm.expect(payload.errors).to.be.undefined; pm.expect(value.available).to.eql(false); pm.expect(value.overlaps.some((entry) => entry.type === 'BOOKING' && entry.status === 'TENTATIVE')).to.eql(true); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryBookingBlockedPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "MAINTENANCE active block is unavailable",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventorySeededScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const payload = pm.response.json(); const value = payload.data && payload.data.propertyAvailability;",
+              "pm.test('MAINTENANCE ACTIVE overlap blocks availability', () => { pm.expect(payload.errors).to.be.undefined; pm.expect(value.available).to.eql(false); pm.expect(value.overlaps.some((entry) => entry.type === 'MAINTENANCE' && entry.status === 'ACTIVE')).to.eql(true); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryMaintenanceBlockedPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "CHANNEL active block is unavailable and sanitized",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventorySeededScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const payload = pm.response.json(); const value = payload.data && payload.data.propertyAvailability;",
+              "pm.test('CHANNEL ACTIVE overlap blocks and exposes only provider', () => { const overlap = value.overlaps.find((entry) => entry.type === 'CHANNEL' && entry.status === 'ACTIVE'); pm.expect(payload.errors).to.be.undefined; pm.expect(value.available).to.eql(false); pm.expect(overlap).to.be.an('object'); pm.expect(overlap.channelProvider).to.be.a('string').and.not.empty; });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryChannelBlockedPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Released and cancelled history is nonblocking",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventorySeededScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const payload = pm.response.json(); const value = payload.data && payload.data.propertyAvailability;",
+              "pm.test('RELEASED and CANCELLED history remains visible but nonblocking', () => { const statuses = value.overlaps.map((entry) => entry.status); pm.expect(payload.errors).to.be.undefined; pm.expect(value.available).to.eql(true); pm.expect(statuses).to.include('RELEASED'); pm.expect(statuses).to.include('CANCELLED'); });",
+              "pm.test('overlaps are deterministically ordered', () => { const keys = value.overlaps.map((entry) => [entry.startDate, entry.endDateExclusive, entry.type, entry.status, entry.channelProvider || ''].join('|')); pm.expect(keys).to.eql([...keys].sort()); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryHistoryOnlyPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Adjacent blocks do not overlap",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventorySeededScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const payload = pm.response.json(); const value = payload.data && payload.data.propertyAvailability;",
+              "pm.test('blocks ending at check-in or starting at checkout are adjacent', () => { pm.expect(payload.errors).to.be.undefined; pm.expect(value.available).to.eql(true); pm.expect(value.overlaps).to.eql([]); });"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAdjacentPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Validation and property resolution",
+      "item": [
+        {
+          "name": "Equal dates are invalid",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryValidationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns INVALID_INVENTORY_RANGE and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVALID_INVENTORY_RANGE'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"2027-06-10\",\"checkOutDate\":\"2027-06-10\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Reversed dates are invalid",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryValidationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns INVALID_INVENTORY_RANGE and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVALID_INVENTORY_RANGE'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"2027-06-11\",\"checkOutDate\":\"2027-06-10\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Timestamp input is invalid",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryValidationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns INVALID_INVENTORY_RANGE and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVALID_INVENTORY_RANGE'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"2027-06-10T14:00:00Z\",\"checkOutDate\":\"2027-06-13\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Malformed property ID is invalid",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryValidationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns INVALID_INVENTORY_RANGE and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVALID_INVENTORY_RANGE'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"not-a-uuid\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Missing property fails closed",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryValidationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns PROPERTY_NOT_FOUND and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('PROPERTY_NOT_FOUND'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryMissingPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Unmapped property fails closed",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryValidationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns PROPERTY_PARTITION_UNMAPPED and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('PROPERTY_PARTITION_UNMAPPED'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryUnmappedPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Authorization fail-closed",
+      "item": [
+        {
+          "name": "Missing identity is unauthenticated",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryAuthorizationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns sanitized UNAUTHENTICATED and no observation', () => { pm.response.to.have.status(401); pm.expect(payload.errors.map((error) => error.extensions.code)).to.eql(['UNAUTHENTICATED']); pm.expect(payload.errors[0].message).to.eql('Authentication is required.'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Foreign branch property is forbidden",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryAuthorizationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns INVENTORY_READ_FORBIDDEN and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVENTORY_READ_FORBIDDEN'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryForeignBranchAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryForeignPropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Revoked assignment is forbidden",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryAuthorizationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns INVENTORY_READ_FORBIDDEN and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVENTORY_READ_FORBIDDEN'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryRevokedAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "OWN SELF or ASSIGNED without branch partition is forbidden",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryAuthorizationScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns INVENTORY_READ_FORBIDDEN and no observation', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('INVENTORY_READ_FORBIDDEN'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryScopeDeniedAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Dependency fail-closed",
+      "description": "Run one request at a time after intentionally making only the named local dependency unavailable. Restore it immediately after the assertion.",
+      "item": [
+        {
+          "name": "Property partition dependency unavailable",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryDependencyScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns PROPERTY_PARTITION_UNAVAILABLE and never availability', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('PROPERTY_PARTITION_UNAVAILABLE'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Authorization dependency unavailable",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["if (pm.environment.get('runInventoryDependencyScenarios') !== 'true') { pm.execution.skipRequest(); }"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["const payload = pm.response.json(); pm.test('returns AUTHORIZATION_UNAVAILABLE and never availability', () => { pm.expect(payload.errors.map((error) => error.extensions.code)).to.include('AUTHORIZATION_UNAVAILABLE'); pm.expect(payload.data && payload.data.propertyAvailability).to.not.be.an('object'); });"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{inventoryAccessToken}}" }, { "key": "Content-Type", "value": "application/json" }, { "key": "X-CSRF-Token", "value": "inventory-observation" } ],
+            "body": { "mode": "raw", "raw": "{\"query\":\"query InventoryAvailability($input: PropertyAvailabilityInput!) { propertyAvailability(input: $input) { propertyId checkInDate checkOutDate available inventoryRevision branchId propertyMembershipVersion observedAt overlaps { type status startDate endDateExclusive channelProvider } } }\",\"variables\":{\"input\":{\"propertyId\":\"{{inventoryAvailablePropertyId}}\",\"checkInDate\":\"{{inventoryCheckInDate}}\",\"checkOutDate\":\"{{inventoryCheckOutDate}}\"}}}", "options": { "raw": { "language": "json" } } },
+            "url": "{{graphqlUrl}}"
+          }
+        }
+      ]
+    }
+  ]
+}

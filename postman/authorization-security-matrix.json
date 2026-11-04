@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "jira": "SCRUM-525",
+  "cases": [
+    {
+      "id": "booking.direct-idor",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target is denied unrelated booking"
+    },
+    {
+      "id": "booking.list-filtering",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target list is filtered to active ASSIGNED records"
+    },
+    {
+      "id": "booking.field-leakage",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target reads ASSIGNED booking"
+    },
+    {
+      "id": "scope.union-own-assigned",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target list is filtered to active ASSIGNED records"
+    },
+    {
+      "id": "scope.all-dominance",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "SUPER_ADMIN ALL dominates list filtering and sensitive masking"
+    },
+    {
+      "id": "assignment.expired-record-relation",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Target is denied booking with expired assignment"
+    },
+    {
+      "id": "authorization.immediate-reduction",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "Reduced ASSIGNED scope is denied"
+    },
+    {
+      "id": "authorization.dependency-unavailable",
+      "status": "POSTMAN_EXECUTABLE",
+      "postmanRequest": "User authorization dependency unavailable fails closed"
+    },
+    {
+      "id": "payment-intent.record-idor",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-526 / service_payment PaymentIntentControllerTest and PaymentIntentAuthorizationTest",
+      "reason": "Payment REST is internal-only and no safe deterministic Payment Intent Postman fixture exists yet."
+    },
+    {
+      "id": "settlement.action-actor-field-policy",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-530 / service_finance SettlementControllerAuthorizationTest and FinanceOperationalAuthorizationTest",
+      "reason": "Finance Settlement REST is internal-only; controller tests cover exact action permissions, authenticated actor binding, financial-field permission, and ALL-only fail-closed record scope."
+    },
+    {
+      "id": "scope.partition-positive",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-528 and SCRUM-531 / service_property PropertyPartitionRecordServiceTest, service_booking BookingAuthorizationGrpcServiceTest, service_payment GrpcBookingProjectionClientTest, and service_finance FinanceOperationalAuthorizationTest",
+      "reason": "The Property-to-Branch resolver is internal mTLS gRPC, so positive mapped PARTITION access for Payment and Finance Settlement is verified at the service boundary instead of exposed through public Postman."
+    },
+    {
+      "id": "scope.partition-negative",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-528 and SCRUM-531 / service_property PropertyPartitionGrpcServiceTest, service_payment BookingChargeSecurityWebMvcTest plus GrpcBookingProjectionClientTest, and service_finance FinancePropertyPartitionClientTest plus FinanceOperationalAuthorizationTest",
+      "reason": "Missing mapping fails closed as 403 and resolver unavailability as 503; both are internal service-boundary cases without a safe public mutation API."
+    },
+    {
+      "id": "authorization.expired-role-grant",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-525 / service_user AuthorizationSnapshotExpiryIntegrationTest",
+      "reason": "Role validity is an internal authorization-snapshot boundary; a PostgreSQL integration test proves expired roles and grants are excluded without exposing a public test-only mutation API."
+    },
+    {
+      "id": "export.bulk-access",
+      "status": "SERVICE_TEST_ONLY",
+      "evidence": "SCRUM-530 / service_finance SettlementControllerAuthorizationTest",
+      "reason": "Settlement export now enforces settlement:export, finance:export, and finance:read, but the Finance REST endpoint remains internal-only and is not safely reachable by the public Postman collection."
+    }
+  ]
+}

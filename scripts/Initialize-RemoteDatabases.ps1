@@ -5,11 +5,18 @@ param(
     [string] $BootstrapDatabase = 'vistay',
     [string] $BootstrapUser = 'vistay',
     [securestring] $BootstrapPassword,
+    [ValidateSet('require', 'verify-ca', 'verify-full', 'disable')]
+    [string] $SslMode = 'require',
+    [switch] $AllowInsecureTailscaleTransport,
     [string] $WorkspaceRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [string] $SecretsPath = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.secrets\database-credentials.xml')
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($SslMode -eq 'disable' -and -not $AllowInsecureTailscaleTransport) {
+    throw 'SslMode=disable requires -AllowInsecureTailscaleTransport. Prefer PostgreSQL TLS even over Tailscale.'
+}
 
 if (-not $BootstrapPassword) {
     $BootstrapPassword = Read-Host 'PostgreSQL bootstrap password' -AsSecureString
@@ -26,6 +33,7 @@ $services = @(
     @{ Name = 'property'; Repo = 'service_property'; Database = 'vistay_property_db' },
     @{ Name = 'booking'; Repo = 'service_booking'; Database = 'vistay_booking_db' },
     @{ Name = 'finance'; Repo = 'service_finance'; Database = 'vistay_finance_db' },
+    @{ Name = 'payment'; Repo = 'service_payment'; Database = 'vistay_payment_db' },
     @{ Name = 'operations'; Repo = 'service_operations'; Database = 'vistay_operations_db' },
     @{ Name = 'ota'; Repo = 'service_ota'; Database = 'vistay_ota_db' },
     @{ Name = 'notification'; Repo = 'service_notification'; Database = 'vistay_notification_db' },
@@ -71,8 +79,10 @@ New-Item -ItemType Directory -Path $secretsDirectory -Force | Out-Null
 $credentialStore | Export-Clixml -LiteralPath $SecretsPath -Force
 
 $previousPassword = $env:PGPASSWORD
+$previousSslMode = $env:PGSSLMODE
 try {
     $env:PGPASSWORD = ConvertTo-PlainText $BootstrapPassword
+    $env:PGSSLMODE = $SslMode
     $bootstrapArgs = @(
         '-v', 'ON_ERROR_STOP=1',
         '-h', $HostName, '-p', $Port, '-U', $BootstrapUser,
@@ -88,7 +98,7 @@ try {
 
     foreach ($service in $services) {
         $stored = $credentialStore.Services[$service.Name]
-        $env:DB_MIGRATION_URL = "jdbc:postgresql://${HostName}:$Port/$($service.Database)?sslmode=prefer"
+        $env:DB_MIGRATION_URL = "jdbc:postgresql://${HostName}:$Port/$($service.Database)?sslmode=$SslMode"
         $env:DB_MIGRATION_USERNAME = $stored.MigratorUsername
         $env:DB_MIGRATION_PASSWORD = ConvertTo-PlainText $stored.MigratorPassword
 
@@ -109,6 +119,7 @@ try {
 }
 finally {
     $env:PGPASSWORD = $previousPassword
+    $env:PGSSLMODE = $previousSslMode
     Remove-Item Env:DB_MIGRATION_URL, Env:DB_MIGRATION_USERNAME, Env:DB_MIGRATION_PASSWORD -ErrorAction SilentlyContinue
 }
 

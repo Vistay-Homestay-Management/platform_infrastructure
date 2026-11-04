@@ -8,7 +8,8 @@ FROM (VALUES
     ('vistay_property_owner'), ('vistay_booking_owner'),
     ('vistay_finance_owner'), ('vistay_operations_owner'),
     ('vistay_ota_owner'), ('vistay_notification_owner'),
-    ('vistay_media_owner'), ('vistay_warehouse_owner')
+    ('vistay_media_owner'), ('vistay_warehouse_owner'),
+    ('vistay_payment_owner')
 ) AS owners(role_name)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
@@ -24,7 +25,8 @@ FROM (VALUES
     ('vistay_ota_migrator'), ('vistay_ota_app'),
     ('vistay_notification_migrator'), ('vistay_notification_app'),
     ('vistay_media_migrator'), ('vistay_media_app'),
-    ('vistay_warehouse_migrator'), ('vistay_warehouse_app')
+    ('vistay_warehouse_migrator'), ('vistay_warehouse_app'),
+    ('vistay_payment_migrator'), ('vistay_payment_app')
 ) AS logins(role_name)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
@@ -49,6 +51,8 @@ SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', 'vistay_media_migrator', :'medi
 SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', 'vistay_media_app', :'media_app_password') \gexec
 SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', 'vistay_warehouse_migrator', :'warehouse_migrator_password') \gexec
 SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', 'vistay_warehouse_app', :'warehouse_app_password') \gexec
+SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', 'vistay_payment_migrator', :'payment_migrator_password') \gexec
+SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', 'vistay_payment_app', :'payment_app_password') \gexec
 
 SELECT format('GRANT %I TO %I', owner_name, migrator_name)
 FROM (VALUES
@@ -61,7 +65,8 @@ FROM (VALUES
     ('vistay_ota_owner', 'vistay_ota_migrator'),
     ('vistay_notification_owner', 'vistay_notification_migrator'),
     ('vistay_media_owner', 'vistay_media_migrator'),
-    ('vistay_warehouse_owner', 'vistay_warehouse_migrator')
+    ('vistay_warehouse_owner', 'vistay_warehouse_migrator'),
+    ('vistay_payment_owner', 'vistay_payment_migrator')
 ) AS memberships(owner_name, migrator_name)
 \gexec
 
@@ -76,7 +81,8 @@ FROM (VALUES
     ('vistay_ota_db', 'vistay_ota_owner'),
     ('vistay_notification_db', 'vistay_notification_owner'),
     ('vistay_media_db', 'vistay_media_owner'),
-    ('vistay_warehouse_db', 'vistay_warehouse_owner')
+    ('vistay_warehouse_db', 'vistay_warehouse_owner'),
+    ('vistay_payment_db', 'vistay_payment_owner')
 ) AS databases(database_name, owner_name)
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = database_name)
 \gexec
@@ -86,7 +92,7 @@ FROM (VALUES
     ('vistay_authentication_db'), ('vistay_user_db'), ('vistay_property_db'),
     ('vistay_booking_db'), ('vistay_finance_db'), ('vistay_operations_db'),
     ('vistay_ota_db'), ('vistay_notification_db'), ('vistay_media_db'),
-    ('vistay_warehouse_db')
+    ('vistay_warehouse_db'), ('vistay_payment_db')
 ) AS databases(database_name)
 \gexec
 
@@ -101,7 +107,8 @@ FROM (VALUES
     ('vistay_ota_db', 'vistay_ota_migrator', 'vistay_ota_app'),
     ('vistay_notification_db', 'vistay_notification_migrator', 'vistay_notification_app'),
     ('vistay_media_db', 'vistay_media_migrator', 'vistay_media_app'),
-    ('vistay_warehouse_db', 'vistay_warehouse_migrator', 'vistay_warehouse_app')
+    ('vistay_warehouse_db', 'vistay_warehouse_migrator', 'vistay_warehouse_app'),
+    ('vistay_payment_db', 'vistay_payment_migrator', 'vistay_payment_app')
 ) AS grants(database_name, migrator_name, app_name)
 \gexec
 
@@ -116,6 +123,7 @@ FROM (VALUES
     ('vistay_ota_db', 'vistay_ota_owner', 'vistay_ota_migrator'),
     ('vistay_notification_db', 'vistay_notification_owner', 'vistay_notification_migrator'),
     ('vistay_media_db', 'vistay_media_owner', 'vistay_media_migrator'),
-    ('vistay_warehouse_db', 'vistay_warehouse_owner', 'vistay_warehouse_migrator')
+    ('vistay_warehouse_db', 'vistay_warehouse_owner', 'vistay_warehouse_migrator'),
+    ('vistay_payment_db', 'vistay_payment_owner', 'vistay_payment_migrator')
 ) AS settings(database_name, owner_name, migrator_name)
 \gexec

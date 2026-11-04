@@ -1,0 +1,196 @@
+{
+  "info": {
+    "_postman_id": "269f7809-0703-4de6-bb5c-5af403f1fc74",
+    "name": "ViStay Inventory Management",
+    "description": "SCRUM-536 branch-scoped, safe-default inventory block management query flow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const forbidden = ['bookingId', 'holdId', 'customerId', 'guestId', 'channelExternalBlockId', 'actorAccountId', 'actorProfileId', 'authorizationEvidence', 'commercialAmount', 'accessToken'];",
+          "const visit = (value) => {",
+          "  if (!value || typeof value !== 'object') return;",
+          "  Object.keys(value).forEach(key => {",
+          "    pm.expect(forbidden).to.not.include(key);",
+          "    visit(value[key]);",
+          "  });",
+          "};",
+          "let payload = {};",
+          "try { payload = pm.response.json(); } catch (_) {}",
+          "visit(payload);",
+          "const wire = pm.response.text().toLowerCase();",
+          "['jdbc:', 'postgresql://', 'select ', 'insert ', 'password', 'client_secret', 'bearer '].forEach(marker => pm.expect(wire).to.not.include(marker));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Ordered management query flow",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.environment.get('runInventoryManagementFlow') !== 'true') pm.execution.skipRequest();",
+              "['inventoryManagementAccessToken', 'inventoryManagementForeignAccessToken', 'inventoryManagementPropertyId', 'inventoryManagementExpectedBranchId', 'inventoryManagementExpectedMembershipVersion'].forEach(key => {",
+              "  if (!pm.environment.get(key)) throw new Error(`Missing required environment value: ${key}`);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "List first inventory management page",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{inventoryManagementAccessToken}}", "type": "text" },
+              { "key": "X-CSRF-Token", "value": "inventory-management" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query InventoryBlocks($input: InventoryBlockManagementInput!) { inventoryBlocks(input: $input) { inventoryRevision branchId propertyMembershipVersion pageInfo { hasNextPage endCursor } nodes { inventoryBlockId propertyId type status startDate endDateExclusive reason channelProvider blockVersion createdAt updatedAt releasedAt } } }\",\n  \"variables\": {\n    \"input\": {\n      \"propertyId\": \"{{inventoryManagementPropertyId}}\",\n      \"fromDate\": \"{{inventoryManagementFromDate}}\",\n      \"toDateExclusive\": \"{{inventoryManagementToDateExclusive}}\",\n      \"types\": [],\n      \"statuses\": [],\n      \"first\": 2\n    }\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('first management page is revision pinned', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.errors).to.be.undefined;",
+                  "  const page = body.data.inventoryBlocks;",
+                  "  pm.expect(page.branchId).to.eql(pm.environment.get('inventoryManagementExpectedBranchId'));",
+                  "  pm.expect(page.propertyMembershipVersion).to.eql(pm.environment.get('inventoryManagementExpectedMembershipVersion'));",
+                  "  pm.expect(BigInt(page.inventoryRevision) >= 0n).to.be.true;",
+                  "  pm.expect(page.nodes.length).to.be.at.most(2);",
+                  "  page.nodes.forEach(node => pm.expect(node.propertyId).to.eql(pm.environment.get('inventoryManagementPropertyId')));",
+                  "  pm.environment.set('inventoryManagementRevision', page.inventoryRevision);",
+                  "  pm.environment.set('inventoryManagementEndCursor', page.pageInfo.endCursor || '');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List next inventory management page",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('inventoryManagementEndCursor')) throw new Error('Fixture must contain more than two inventory blocks');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('next page uses opaque keyset cursor', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.errors).to.be.undefined;",
+                  "  const page = body.data.inventoryBlocks;",
+                  "  pm.expect(page.inventoryRevision).to.eql(pm.environment.get('inventoryManagementRevision'));",
+                  "  pm.expect(page.nodes.length).to.be.at.most(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{inventoryManagementAccessToken}}", "type": "text" },
+              { "key": "X-CSRF-Token", "value": "inventory-management" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query InventoryBlocks($input: InventoryBlockManagementInput!) { inventoryBlocks(input: $input) { inventoryRevision branchId propertyMembershipVersion pageInfo { hasNextPage endCursor } nodes { inventoryBlockId propertyId type status startDate endDateExclusive reason channelProvider blockVersion createdAt updatedAt releasedAt } } }\",\n  \"variables\": {\n    \"input\": {\n      \"propertyId\": \"{{inventoryManagementPropertyId}}\",\n      \"fromDate\": \"{{inventoryManagementFromDate}}\",\n      \"toDateExclusive\": \"{{inventoryManagementToDateExclusive}}\",\n      \"types\": [],\n      \"statuses\": [],\n      \"first\": 2,\n      \"after\": \"{{inventoryManagementEndCursor}}\"\n    }\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          }
+        },
+        {
+          "name": "Reject invalid inventory management range",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{inventoryManagementAccessToken}}", "type": "text" },
+              { "key": "X-CSRF-Token", "value": "inventory-management" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query InventoryBlocks($input: InventoryBlockManagementInput!) { inventoryBlocks(input: $input) { inventoryRevision nodes { inventoryBlockId } } }\",\n  \"variables\": {\n    \"input\": {\n      \"propertyId\": \"{{inventoryManagementPropertyId}}\",\n      \"fromDate\": \"2027-02-01\",\n      \"toDateExclusive\": \"2027-01-01\",\n      \"first\": 50\n    }\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('invalid range fails without data', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.errors[0].extensions.code).to.eql('INVALID_INVENTORY_MANAGEMENT_INPUT');",
+                  "  pm.expect(body.data.inventoryBlocks).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Foreign branch cannot list inventory blocks",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{inventoryManagementForeignAccessToken}}", "type": "text" },
+              { "key": "X-CSRF-Token", "value": "inventory-management" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query InventoryBlocks($input: InventoryBlockManagementInput!) { inventoryBlocks(input: $input) { inventoryRevision nodes { inventoryBlockId } } }\",\n  \"variables\": {\n    \"input\": {\n      \"propertyId\": \"{{inventoryManagementPropertyId}}\",\n      \"first\": 50\n    }\n  }\n}"
+            },
+            "url": "{{graphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('foreign branch is denied without data', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.errors[0].extensions.code).to.eql('INVENTORY_READ_FORBIDDEN');",
+                  "  pm.expect(body.data.inventoryBlocks).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -25,7 +25,7 @@ else {
 }
 
 $plainSecret = [System.Net.NetworkCredential]::new('', $secureSecret).Password
-foreach ($name in @('gateway_api', 'service_authentication', 'service_notification')) {
+foreach ($name in @('service_authentication', 'service_notification')) {
     $repository = "$Organization/$name"
     & gh api --method PUT "repos/$repository/environments/$Environment" --silent
     $plainSecret | & gh secret set VISTAY_JWT_SECRET --repo $repository --env $Environment

@@ -1,0 +1,115 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@authenticated"])
+
+type Query {
+  viewer: BackofficeViewer! @authenticated
+  myProfile: PersonalProfile! @authenticated
+  authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @authenticated
+  authorizationSubject(subjectId: ID!): AuthorizationSubject! @authenticated
+  authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @authenticated
+  authorizationChangeRequests(status: AuthorizationChangeStatus = PENDING): [AuthorizationChangeRequest!]! @authenticated
+  authorizationAudit(targetSubjectId: ID): [AuthorizationAuditEvent!]! @authenticated
+}
+
+type Mutation {
+  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @authenticated
+  requestAuthorizationChange(input: RequestAuthorizationChangeInput!): AuthorizationChangeRequest! @authenticated
+  approveAuthorizationChange(id: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationChangeRequest! @authenticated
+  rejectAuthorizationChange(id: ID!, reason: String!): AuthorizationChangeRequest! @authenticated
+  revokeRoleAssignment(assignmentId: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationSubject! @authenticated
+  reduceAuthorizationScopes(input: ReduceAuthorizationScopesInput!): AuthorizationSubject! @authenticated
+  establishSecondApprover(targetSubjectId: ID!, reason: String!): AuthorizationSubject! @authenticated
+}
+
+type BackofficeViewer {
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  profileVersion: Int!
+  roles: [String!]!
+  permissions: [String!]!
+  grants: [EffectiveGrant!]!
+  authorizationVersion: Int!
+}
+
+type PersonalProfile {
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  version: Int!
+  updatedAt: String!
+  replayed: Boolean!
+}
+
+input UpdateMyProfileInput {
+  displayName: String!
+  contactPhone: String
+  avatarMediaId: ID
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
+}
+
+enum AccountType { CUSTOMER ADMIN HOST }
+enum DataScope { SELF OWN ASSIGNED ALL }
+enum AuthorizationChangeStatus { PENDING APPROVED REJECTED EXPIRED STALE }
+
+type EffectiveGrant { permissionCode: String!, scopes: [DataScope!]! }
+type AuthorizationPermissionPolicy { permissionCode: String!, allowedScopes: [DataScope!]!, defaultScopes: [DataScope!]! }
+type AuthorizationRole { code: String!, displayName: String!, accountType: AccountType!, policies: [AuthorizationPermissionPolicy!]! }
+type AuthorizationAssignment { id: ID!, roleCode: String!, validUntil: String, grants: [EffectiveGrant!]! }
+type AuthorizationSubject {
+  id: ID!
+  accountType: AccountType!
+  accountId: ID!
+  profileId: ID!
+  active: Boolean!
+  authorizationVersion: Int!
+  assignments: [AuthorizationAssignment!]!
+  effectiveGrants: [EffectiveGrant!]!
+}
+type AuthorizationChangeRequest {
+  id: ID!
+  targetSubjectId: ID!
+  requestedBySubjectId: ID!
+  reviewedBySubjectId: ID
+  changeType: String!
+  status: AuthorizationChangeStatus!
+  roleCode: String!
+  reason: String!
+  reviewReason: String
+  expiresAt: String!
+  createdAt: String!
+}
+type AuthorizationAuditEvent {
+  id: ID!
+  actorSubjectId: ID
+  targetSubjectId: ID
+  action: String!
+  reason: String!
+  correlationId: String
+  createdAt: String!
+}
+input PermissionScopeOverrideInput { permissionCode: String!, scopes: [DataScope!]! }
+input RequestAuthorizationChangeInput {
+  targetSubjectId: ID!
+  roleCode: String!
+  scopeOverrides: [PermissionScopeOverrideInput!] = []
+  validUntil: String
+  reason: String!
+  expectedAuthorizationVersion: Int!
+  idempotencyKey: String!
+}
+input RetainedPermissionScopesInput { permissionCode: String!, scopes: [DataScope!]! }
+input ReduceAuthorizationScopesInput {
+  assignmentId: ID!
+  retainedScopes: [RetainedPermissionScopesInput!]!
+  reason: String!
+  expectedAuthorizationVersion: Int!
+}
