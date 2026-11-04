@@ -1,0 +1,31 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@authenticated"])
+
+type Query {
+  myProfile: PersonalProfile! @authenticated
+}
+
+type Mutation {
+  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @authenticated
+}
+
+type PersonalProfile {
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  version: Int!
+  updatedAt: String!
+  replayed: Boolean!
+}
+
+input UpdateMyProfileInput {
+  displayName: String!
+  contactPhone: String
+  avatarMediaId: ID
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
+}
