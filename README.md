@@ -68,6 +68,9 @@ unauthenticated security checks. Account bootstrap, notification streaming,
 payment mutations, pricing authoring/publication, inventory block commands, and
 VietQR callbacks require explicit opt-in flags.
 
+For the current backend capability and frontend handoff snapshot, see
+[`summary/`](summary/README.md).
+
 ## Federation contracts
 
 `router/backoffice/subgraphs` vendors the reviewed User, Notification, and Payment SDLs
