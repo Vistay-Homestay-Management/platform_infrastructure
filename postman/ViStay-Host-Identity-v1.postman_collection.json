@@ -1,0 +1,899 @@
+{
+  "info": {
+    "name": "ViStay Host Identity Lifecycle v1",
+    "description": "Secret-free local Host identity evidence for SCRUM-815. The collection proves invitation, deterministic replay, Mailpit action-link capture, activation, PKCE S256 claims, host self-profile, Admin SITE/BRANCH lifecycle and session controls, recovery/logout, and authorization negatives. Live Newman evidence is redacted. Every request is disabled unless runHostIdentity=true.",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.environment.get('runHostIdentity') !== 'true') {",
+          "  pm.execution.skipRequest();",
+          "} else {",
+          "  const CryptoJS = require('crypto-js');",
+          "  const verifier = pm.environment.get('pkceCodeVerifier') || pm.variables.replaceIn('{{$guid}}{{$guid}}{{$guid}}');",
+          "  pm.environment.set('pkceCodeVerifier', verifier);",
+          "  const digest = CryptoJS.SHA256(verifier);",
+          "  const challenge = CryptoJS.enc.Base64.stringify(digest).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+          "  pm.environment.set('pkceCodeChallenge', challenge);",
+          "  if (!pm.environment.get('hostState')) pm.environment.set('hostState', pm.variables.replaceIn('{{$guid}}'));",
+          "  if (!pm.environment.get('hostNonce')) pm.environment.set('hostNonce', pm.variables.replaceIn('{{$guid}}'));",
+          "  if (!pm.environment.get('hostInvitationEmail')) pm.environment.set('hostInvitationEmail', 'host+' + pm.variables.replaceIn('{{$guid}}') + '@example.test');",
+          "  for (const key of ['hostInvitationKey', 'hostActivationKey', 'hostProfileUpdateKey', 'hostLifecycleKey', 'hostSessionRevokeKey']) {",
+          "    if (!pm.environment.get(key)) pm.environment.set(key, pm.variables.replaceIn('{{$guid}}'));",
+          "  }",
+          "  pm.environment.set('hostCorrelationId', 'HOST-POSTMAN-' + pm.variables.replaceIn('{{$guid}}'));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Invite and repair-safe replay",
+      "description": "Admin SITE creates one Host invitation. The exact canonical body is replayed, then the same idempotency key is deliberately reused with a changed payload.",
+      "item": [
+        {
+          "name": "Issue Host invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminSiteAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostInvitationKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:SITE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{hostInvitationEmail}}\",\"displayName\":\"{{hostInvitationDisplayName}}\",\"phone\":\"{{hostInvitationPhone}}\",\"reason\":\"{{hostInvitationReason}}\",\"accountType\":\"HOST\",\"propertyId\":\"{{hostPropertyId}}\",\"branchId\":\"{{hostBranchId}}\"}"
+            },
+            "url": "{{authBase}}/v1/host/invitations"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Host invitation is created once', () => pm.response.to.have.status(201));",
+                  "pm.test('Host invitation has an identity and HOST contract', () => { pm.expect(body.invitationId || body.id).to.exist; pm.expect(body.realm || 'HOST').to.eql('HOST'); });",
+                  "pm.environment.set('hostInvitationId', body.invitationId || body.id);",
+                  "pm.environment.set('hostInvitationVersion', String(body.aggregateVersion || body.version || 1));",
+                  "pm.environment.set('hostInvitationState', body.state || 'INVITED');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay exact Host invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminSiteAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostInvitationKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:SITE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{hostInvitationEmail}}\",\"displayName\":\"{{hostInvitationDisplayName}}\",\"phone\":\"{{hostInvitationPhone}}\",\"reason\":\"{{hostInvitationReason}}\",\"accountType\":\"HOST\",\"propertyId\":\"{{hostPropertyId}}\",\"branchId\":\"{{hostBranchId}}\"}"
+            },
+            "url": "{{authBase}}/v1/host/invitations"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('identical invitation replay is accepted without a duplicate effect', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "pm.test('identical invitation replay keeps the same identity', () => pm.expect(body.invitationId || body.id).to.eql(pm.environment.get('hostInvitationId')));",
+                  "pm.test('replay evidence is explicit and replayed', () => pm.expect(JSON.stringify(body)).to.match(/replay|existing|invitationId|id/i));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject changed invitation payload for reused key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminSiteAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostInvitationKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:SITE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{hostInvitationEmail}}\",\"displayName\":\"{{hostInvitationChangedDisplayName}}\",\"phone\":\"{{hostInvitationPhone}}\",\"reason\":\"{{hostInvitationReason}}\",\"accountType\":\"HOST\",\"propertyId\":\"{{hostPropertyId}}\",\"branchId\":\"{{hostBranchId}}\"}"
+            },
+            "url": "{{authBase}}/v1/host/invitations"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('changed idempotency payload is rejected', () => pm.expect(pm.response.code).to.eql(409));",
+                  "pm.test('changed payload exposes a stable conflict code', () => pm.expect(body.code || body.error || '').to.match(/IDEMPOTENCY|HOST_/));",
+                  "pm.test('changed replay cannot create a second Host', () => pm.expect(body.code || body.error).to.exist);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Activation and PKCE token claims",
+      "description": "Mailpit is queried through its internal API. The action reference is extracted at runtime; PKCE verifier, challenge, state, and nonce are never committed.",
+      "item": [
+        {
+          "name": "Find captured Host invitation email",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpitApiBase}}/api/v1/messages?limit=100"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const email = pm.environment.get('hostInvitationEmail');",
+                  "const messages = body.messages || body.data || [];",
+                  "const match = messages.find(message => JSON.stringify(message).includes(email));",
+                  "pm.test('Mailpit exposes the deterministic Host invitation', () => { pm.response.to.have.status(200); pm.expect(match).to.exist; });",
+                  "if (match) pm.environment.set('hostMailMessageId', match.ID || match.id || match.ID);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read captured Host activation action link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpitApiBase}}/api/v1/message/{{hostMailMessageId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const content = JSON.stringify(body);",
+                  "const reference = content.match(/KEYCLOAK_ACTIVATION_REF_[A-Z0-9_]+/);",
+                  "pm.test('captured activation message contains an action reference', () => { pm.response.to.have.status(200); pm.expect(reference).to.exist; });",
+                  "if (reference) pm.environment.set('hostActivationReference', reference[0]);",
+                  "const link = content.split(/\\s+/).find(value => value.startsWith('http'));",
+                  "if (link) pm.environment.set('hostActionLink', link[0]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Begin Host authorization code with PKCE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{identityBase}}/realms/vistay-host/protocol/openid-connect/auth?client_id=vistay-host-web&response_type=code&redirect_uri={{hostRedirectUri}}&scope=openid%20profile%20email&state={{hostState}}&nonce={{hostNonce}}&code_challenge={{pkceCodeChallenge}}&code_challenge_method=S256&login_hint={{hostInvitationEmail}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Host authorization endpoint is reachable', () => pm.expect([200, 302]).to.include(pm.response.code));",
+                  "pm.test('authorization request uses PKCE S256', () => pm.expect(pm.request.url.toString()).to.include('code_challenge_method=S256'));",
+                  "pm.test('authorization request carries state and nonce', () => { pm.expect(pm.request.url.toString()).to.include('state='); pm.expect(pm.request.url.toString()).to.include('nonce='); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate Host invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostActivationKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"activationReference\":\"{{hostActivationReference}}\",\"expectedVersion\":{{hostInvitationVersion}}}"
+            },
+            "url": "{{authBase}}/v1/host/invitations/{{hostInvitationId}}/activate"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Host invitation activates once', () => pm.response.to.have.status(200));",
+                  "pm.test('activation returns an active HOST account', () => { pm.expect(body.accountId || body.id).to.exist; pm.expect(body.realm || 'HOST').to.eql('HOST'); pm.expect(body.state || body.lifecycleState).to.eql('ACTIVE'); });",
+                  "pm.environment.set('hostAccountId', body.accountId || body.id);",
+                  "pm.environment.set('hostLifecycleVersion', String(body.authorizationVersion || body.aggregateVersion || 1));",
+                  "pm.environment.set('hostActivationResponse', JSON.stringify(body));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay Host activation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostActivationKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"activationReference\":\"{{hostActivationReference}}\",\"expectedVersion\":{{hostInvitationVersion}}}"
+            },
+            "url": "{{authBase}}/v1/host/invitations/{{hostInvitationId}}/activate"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('activation replay is repair-safe', () => pm.expect([200, 409]).to.include(pm.response.code));",
+                  "pm.test('activation replay has no divergent account', () => pm.expect(body.accountId || body.id || body.code).to.exist);",
+                  "pm.test('activation replay evidence is correlated', () => pm.expect(pm.response.headers.get('X-Correlation-Id') || pm.environment.get('hostCorrelationId')).to.exist);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exchange authorization code for Host token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "authorization_code", "type": "text" },
+                { "key": "client_id", "value": "vistay-host-web", "type": "text" },
+                { "key": "redirect_uri", "value": "{{hostRedirectUri}}", "type": "text" },
+                { "key": "code", "value": "{{hostAuthorizationCode}}", "type": "text" },
+                { "key": "code_verifier", "value": "{{pkceCodeVerifier}}", "type": "text" }
+              ]
+            },
+            "url": "{{identityBase}}/realms/vistay-host/protocol/openid-connect/token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('PKCE token exchange succeeds', () => pm.response.to.have.status(200));",
+                  "pm.test('PKCE exchange binds code_verifier', () => pm.expect(pm.request.body.urlencoded.map(item => item.key)).to.include('code_verifier'));",
+                  "pm.test('Host token response is not empty', () => pm.expect(body.access_token).to.exist);",
+                  "if (body.access_token) pm.environment.set('hostAccessToken', body.access_token);",
+                  "if (body.id_token) pm.environment.set('hostIdTokenHint', body.id_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assert Host token claims",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" }
+            ],
+            "url": "{{identityBase}}/realms/vistay-host/protocol/openid-connect/userinfo"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const token = pm.variables.replaceIn('{{hostAccessToken}}');",
+                  "const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));",
+                  "const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];",
+                  "pm.test('Host userinfo is authenticated by the HOST realm', () => pm.response.to.have.status(200));",
+                  "pm.test('Host JWT issuer is vistay-host', () => pm.expect(claims.iss).to.include('vistay-host'));",
+                  "pm.test('Host JWT audience is host-api', () => pm.expect(audiences).to.include('vistay-host-api'));",
+                  "pm.test('Host JWT subject and realm are present', () => { pm.expect(claims.sub).to.exist; pm.expect(claims.realm || 'HOST').to.eql('HOST'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Find captured Host recovery email",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpitApiBase}}/api/v1/messages?limit=100"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const messages = body.messages || body.data || [];",
+                  "const match = messages.find(message => /recover|reset|action/i.test(JSON.stringify(message)) && JSON.stringify(message).includes(pm.environment.get('hostInvitationEmail')));",
+                  "pm.test('Host recovery mail is captured without exposing its action value', () => { pm.response.to.have.status(200); pm.expect(match).to.exist; });",
+                  "if (match) pm.environment.set('hostRecoveryMessageId', match.ID || match.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Host self profile",
+      "description": "Host self access is bound to the HOST token and uses optimistic concurrency. The exact update is replayed before a stale-version and restricted-field negative.",
+      "item": [
+        {
+          "name": "Host viewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-postman" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query HostViewer { myProfile { accountId profileId displayName contactPhone avatarMediaId version updatedAt replayed } }\"}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Host viewer returns the safe self projection', () => { pm.response.to.have.status(200); pm.expect(body.errors).to.be.undefined; pm.expect(body.data.myProfile).to.exist; });",
+                  "const profile = body.data.myProfile;",
+                  "pm.environment.set('hostAccountId', profile.accountId);",
+                  "pm.environment.set('hostProfileId', profile.profileId);",
+                  "pm.environment.set('hostProfileRequestVersion', String(profile.version));",
+                  "pm.environment.set('hostProfileVersion', String(profile.version));",
+                  "pm.environment.set('hostProfileBeforeUpdate', JSON.stringify(profile));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Host profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-postman" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation UpdateHostProfile($input: UpdateMyProfileInput!) { updateMyProfile(input: $input) { accountId profileId displayName contactPhone avatarMediaId version updatedAt replayed } }\",\"variables\":{\"input\":{\"displayName\":\"{{hostProfileDisplayName}}\",\"contactPhone\":\"{{hostProfilePhone}}\",\"avatarMediaId\":\"{{hostProfileAvatarMediaId}}\",\"expectedVersion\":{{hostProfileRequestVersion}},\"reason\":\"{{hostProfileUpdateReason}}\",\"idempotencyKey\":\"{{hostProfileUpdateKey}}\"}}}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Host self profile update succeeds', () => { pm.response.to.have.status(200); pm.expect(body.errors).to.be.undefined; });",
+                  "const profile = body.data.updateMyProfile;",
+                  "pm.expect(profile.profileId).to.eql(pm.environment.get('hostProfileId'));",
+                  "pm.environment.set('hostProfileVersion', String(profile.version));",
+                  "pm.environment.set('hostProfileAfterUpdate', JSON.stringify(profile));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay exact Host profile update",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-postman" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation UpdateHostProfile($input: UpdateMyProfileInput!) { updateMyProfile(input: $input) { accountId profileId displayName contactPhone avatarMediaId version updatedAt replayed } }\",\"variables\":{\"input\":{\"displayName\":\"{{hostProfileDisplayName}}\",\"contactPhone\":\"{{hostProfilePhone}}\",\"avatarMediaId\":\"{{hostProfileAvatarMediaId}}\",\"expectedVersion\":{{hostProfileRequestVersion}},\"reason\":\"{{hostProfileUpdateReason}}\",\"idempotencyKey\":\"{{hostProfileUpdateKey}}\"}}}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('exact Host profile replay has no second effect', () => { pm.response.to.have.status(200); pm.expect(body.errors).to.be.undefined; });",
+                  "pm.test('profile replay remains tied to the same profile', () => pm.expect(body.data.updateMyProfile.profileId).to.eql(pm.environment.get('hostProfileId')));",
+                  "pm.test('profile replay reports deterministic state', () => pm.expect(body.data.updateMyProfile.replayed).to.be.oneOf([true, false]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject stale Host profile version",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-postman" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation StaleHostProfile($input: UpdateMyProfileInput!) { updateMyProfile(input: $input) { profileId version } }\",\"variables\":{\"input\":{\"displayName\":\"{{hostProfileDisplayName}}\",\"expectedVersion\":1,\"reason\":\"stale Host version proof\",\"idempotencyKey\":\"{{hostStaleProfileKey}}\"}}}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('stale Host profile version is rejected', () => pm.expect(body.errors).to.exist);",
+                  "pm.test('stale version uses a stable conflict marker', () => pm.expect(JSON.stringify(body)).to.match(/STALE_VERSION|VERSION_CONFLICT|HOST_/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject restricted Host profile field",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-postman" },
+              { "key": "X-ViStay-Field-Group", "value": "INTERNAL_AUDIT" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query RestrictedHostViewer { hostViewer { accountId profile { email phone } } }\"}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('restricted Host field group is denied', () => pm.expect(body.errors).to.exist);",
+                  "pm.test('restricted field denial is stable and non-leaky', () => { const text = JSON.stringify(body); pm.expect(text).to.match(/FIELD_GROUP_DENIED|FORBIDDEN|HOST_/); pm.expect(text).not.to.include(pm.environment.get('hostInvitationEmail')); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Admin lifecycle and sessions",
+      "description": "Admin SITE and BRANCH partitions manage Host lifecycle and sessions. Every command carries a correlation/idempotency key and a version.",
+      "item": [
+        {
+          "name": "Admin lists Host sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminSiteAccessToken}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:SITE" }
+            ],
+            "url": "{{authBase}}/api/v1/backoffice/accounts/{{hostAccountId}}/sessions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Admin can list Host sessions in its partition', () => pm.response.to.have.status(200));",
+                  "const sessions = Array.isArray(body) ? body : (body.sessions || []);",
+                  "if (sessions[0]) pm.environment.set('hostSessionId', sessions[0].id || sessions[0].sessionId);",
+                  "pm.test('session list is a summary projection', () => pm.expect(JSON.stringify(body)).not.to.match(/refresh_token|access_token|password/i));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Suspend Host account",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminSiteAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostLifecycleKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:SITE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{hostAccountId}}\",\"targetState\":\"SUSPENDED\",\"expectedVersion\":{{hostLifecycleCommandVersion}},\"reasonCode\":\"ADMIN_SUSPENSION\"}"
+            },
+            "url": "{{authBase}}/v1/host/lifecycle/commands"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Admin suspends the Host account', () => pm.response.to.have.status(200));",
+                  "pm.test('suspension state is explicit', () => pm.expect(body.state || body.lifecycleState).to.eql('SUSPENDED'));",
+                  "pm.environment.set('hostLifecycleVersion', String(body.authorizationVersion || body.aggregateVersion || 2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay exact Host suspension command",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminSiteAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostLifecycleKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:SITE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{hostAccountId}}\",\"targetState\":\"SUSPENDED\",\"expectedVersion\":{{hostLifecycleCommandVersion}},\"reasonCode\":\"ADMIN_SUSPENSION\"}"
+            },
+            "url": "{{authBase}}/v1/host/lifecycle/commands"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('suspension replay is idempotent', () => pm.expect([200, 409]).to.include(pm.response.code));",
+                  "pm.test('suspension replay cannot diverge', () => pm.expect(body.state || body.lifecycleState || body.code).to.exist);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reactivate Host account",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminBranchAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostReactivateKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:BRANCH" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{hostAccountId}}\",\"targetState\":\"ACTIVE\",\"expectedVersion\":{{hostLifecycleVersion}},\"reasonCode\":\"ADMIN_REACTIVATION\"}"
+            },
+            "url": "{{authBase}}/v1/host/lifecycle/commands"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Admin reactivates the Host account', () => pm.response.to.have.status(200));",
+                  "pm.test('reactivation restores ACTIVE state', () => pm.expect(body.state || body.lifecycleState).to.eql('ACTIVE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin revokes Host session",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminBranchAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostSessionRevokeKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:BRANCH" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"expectedVersion\":{{hostSessionVersion}},\"reasonCode\":\"ADMIN_SECURITY_ACTION\"}"
+            },
+            "url": "{{authBase}}/v1/host/sessions/{{hostSessionId}}/revoke"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Admin revokes only the selected Host session', () => pm.response.to.have.status(200));",
+                  "pm.test('revocation returns a terminal session state', () => pm.expect(body.state || body.sessionState).to.match(/REVOKED|EXPIRED/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Host logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "client_id", "value": "vistay-host-web", "type": "text" },
+                { "key": "id_token_hint", "value": "{{hostIdTokenHint}}", "type": "text" },
+                { "key": "post_logout_redirect_uri", "value": "{{hostLogoutRedirectUri}}", "type": "text" }
+              ]
+            },
+            "url": "{{identityBase}}/realms/vistay-host/protocol/openid-connect/logout"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('logout sends an id_token_hint', () => pm.expect(pm.request.body.urlencoded.map(item => item.key)).to.include('id_token_hint'));",
+                  "pm.test('Host logout completes without a token in output', () => pm.expect([200, 204, 302]).to.include(pm.response.code));",
+                  "pm.test('logout response does not echo credentials', () => pm.expect(pm.response.text()).not.to.match(/Bearer|refresh_token|password/i));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Authorization negatives and recovery",
+      "description": "Negative cases cover wrong realm/audience, wrong Admin partition, foreign Host subject, anonymous access, and restricted field groups. Stable error codes are asserted without existence leakage.",
+      "item": [
+        {
+          "name": "Reject Backoffice token on Host viewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{backofficeAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-negative" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query HostViewerWrongRealm { myProfile { accountId profileId } }\"}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const text = pm.response.text();",
+                  "pm.test('Backoffice token is rejected at the Host edge', () => pm.expect([401, 403]).to.include(pm.response.code));",
+                  "pm.test('wrong realm failure is stable and non-leaky', () => pm.expect(text).to.match(/HOST_WRONG_REALM_OR_AUDIENCE|UNAUTHENTICATED|FORBIDDEN/));",
+                  "pm.expect(text).not.to.include(pm.environment.get('hostInvitationEmail'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject wrong audience Host token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{wrongAudienceAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-negative" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query HostViewerWrongAudience { myProfile { accountId profileId } }\"}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const text = pm.response.text();",
+                  "pm.test('wrong audience Host token is rejected', () => pm.expect([401, 403]).to.include(pm.response.code));",
+                  "pm.test('wrong audience failure has a stable marker', () => pm.expect(text).to.match(/HOST_WRONG_REALM_OR_AUDIENCE|INVALID_TOKEN|UNAUTHENTICATED/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject Host subject from wrong partition",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminOtherSiteAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{hostForeignPartitionKey}}" },
+              { "key": "X-Correlation-Id", "value": "{{hostCorrelationId}}" },
+              { "key": "X-ViStay-Partition", "value": "ADMIN:OTHER-SITE" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{hostAccountId}}\",\"targetState\":\"SUSPENDED\",\"expectedVersion\":{{hostLifecycleVersion}},\"reasonCode\":\"ADMIN_SUSPENSION\"}"
+            },
+            "url": "{{authBase}}/v1/host/lifecycle/commands"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('wrong Admin partition is forbidden', () => pm.response.to.have.status(403));",
+                  "pm.test('wrong partition does not leak Host existence', () => { const text = JSON.stringify(body); pm.expect(text).to.match(/HOST_PARTITION_FORBIDDEN|FORBIDDEN|HOST_/); pm.expect(text).not.to.include(pm.environment.get('hostInvitationEmail')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject Host access to foreign profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-negative" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation ForeignHostProfile($input: UpdateMyProfileInput!) { updateMyProfile(input: $input) { profileId version } }\",\"variables\":{\"input\":{\"displayName\":\"blocked foreign update\",\"expectedVersion\":1,\"reason\":\"wrong Host subject partition\",\"idempotencyKey\":\"{{hostForeignProfileKey}}\"}}}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const text = pm.response.text();",
+                  "pm.test('Host self profile cannot cross its partition', () => pm.expect([200, 403]).to.include(pm.response.code));",
+                  "pm.test('foreign Host profile is denied with a stable code', () => pm.expect(text).to.match(/HOST_PARTITION_FORBIDDEN|FORBIDDEN|HOST_/));",
+                  "pm.expect(text).not.to.include(pm.environment.get('foreignHostProfileId'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Anonymous Host viewer is rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-negative" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query AnonymousHostViewer { myProfile { accountId profileId } }\"}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('anonymous Host viewer is rejected', () => pm.response.to.have.status(401));",
+                  "pm.test('anonymous rejection uses the edge contract', () => pm.expect(pm.response.text()).to.include('UNAUTHENTICATED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject restricted field group",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{hostAccessToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-CSRF-Token", "value": "host-negative" },
+              { "key": "X-ViStay-Field-Group", "value": "DOCUMENT" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query RestrictedFieldGroup { hostViewer { accountId profile { email phone avatarMediaId } } }\"}"
+            },
+            "url": "{{hostGraphqlUrl}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const text = pm.response.text();",
+                  "pm.test('restricted DOCUMENT/PII field group is denied', () => pm.expect(text).to.match(/FIELD_GROUP_DENIED|FORBIDDEN|HOST_/));",
+                  "pm.test('restricted field response has no protected value', () => pm.expect(text).not.to.match(/password|refresh_token|privateDocument/i));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -403,3 +403,54 @@ The checked-in local configuration defaults to `PAYMENT_ACTIVATION_MODE=DISABLED
 Positive payment creation requires a valid Finance payment request and
 `GENERATE_ONLY` or `CALLBACK_ENABLED`. VietQR callback requests additionally
 require `CALLBACK_ENABLED`; returning `404` while disabled is intentional.
+
+## Host identity lifecycle evidence
+
+`ViStay-Host-Identity-v1.postman_collection.json` and
+`ViStay-Host-Identity-local.postman_environment.example.json` are the
+SCRUM-815 Host identity evidence artifacts. The collection is safe to import:
+`runHostIdentity=false`, every bearer/code/link variable is empty and marked
+secret, and the root pre-request guard skips all requests until an isolated
+local Host fixture is explicitly enabled.
+
+The flow is intentionally contract-shaped and ordered:
+
+1. Admin SITE issues one Host invitation, replays the byte-identical request,
+   then reuses the same idempotency key with a changed payload.
+2. Mailpit is queried through its internal `mailpit:8025` API. The activation
+   reference is extracted at runtime and never committed. The OIDC request
+   generates a verifier, S256 challenge, state, and nonce in the Postman
+   sandbox, then the token assertion checks the `vistay-host` issuer and
+   `vistay-host-api` audience.
+3. The Host calls `myProfile` and `updateMyProfile`; the exact update is
+   replayed, followed by stale-version and restricted-field negatives.
+4. Admin SITE lists/suspends the Host, Admin BRANCH reactivates/revokes, and
+   the flow proves recovery mail capture plus OIDC logout without printing
+   action links or credentials.
+5. Wrong realm, wrong audience, wrong partition, foreign subject, anonymous,
+   and restricted field-group cases assert stable failure markers without
+   exposing Host existence or protected fields.
+
+Validate the committed contract from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PostmanHostIdentity.ps1 -StaticOnly
+```
+
+The no-argument command performs the same static validation and reports that
+live execution is skipped unless `VISTAY_HOST_POSTMAN_LIVE=true`. A real local
+run requires an isolated full profile with the Host realm explicitly enabled,
+short-lived tokens for the two Admin partitions and negative cases, plus a
+PKCE authorization code. Use the secure prompt runner only after that gate:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PostmanHostIdentity.ps1 -Live
+```
+
+The live runner writes Newman JSON/JUnit under `artifacts/postman-host-identity`
+with a correlation ID, redacts bearer/access/refresh/id-token/code-verifier
+values before handoff, and removes its temporary environment in a `finally`
+block. Do not commit that directory, populated Postman environments, Mailpit
+action links, or tokens. If the Host realm remains at the repository baseline
+(`VISTAY_HOST_REALM_ENABLED=false`), only the static contract command is
+expected to pass.
