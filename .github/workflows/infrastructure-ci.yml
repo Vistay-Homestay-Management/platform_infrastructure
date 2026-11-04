@@ -46,6 +46,9 @@ jobs:
       - name: Validate Host realm and local mail capture contract
         shell: pwsh
         run: ./scripts/Test-HostRealmContract.ps1
+      - name: Validate Host edge federation and JWT boundary
+        shell: pwsh
+        run: ./scripts/Test-HostEdgeTopology.ps1
       - name: Validate realm activation and token contract
         shell: pwsh
         run: ./scripts/Test-KeycloakContract.ps1 -EnvFile .env.example
@@ -87,13 +90,18 @@ jobs:
             --env KEYCLOAK_HOST=identity.localhost \
             --env BACKOFFICE_WEB_HOST=admin.localhost \
             --env BACKOFFICE_AUTH_HOST=auth.localhost \
+            --env HOST_GRAPHQL_HOST=host-api.localhost \
+            --env HOST_WEB_HOST=host.localhost \
+            --env VISTAY_HOST_REALM_ENABLED=false \
             --env OBJECT_STORAGE_HOST=objects.localhost \
             --env CHANNEL_MANAGER_WEBHOOK_HOST=channels.localhost \
             --env PAYMENT_WEBHOOK_HOST=payments.localhost \
-            --env 'NGINX_ENVSUBST_FILTER=^(BACKOFFICE_GRAPHQL_HOST|KEYCLOAK_HOST|BACKOFFICE_WEB_HOST|BACKOFFICE_AUTH_HOST|OBJECT_STORAGE_HOST|CHANNEL_MANAGER_WEBHOOK_HOST|PAYMENT_WEBHOOK_HOST)$' \
+            --env 'NGINX_ENVSUBST_FILTER=^(BACKOFFICE_GRAPHQL_HOST|KEYCLOAK_HOST|BACKOFFICE_WEB_HOST|BACKOFFICE_AUTH_HOST|HOST_GRAPHQL_HOST|HOST_WEB_HOST|VISTAY_HOST_REALM_ENABLED|OBJECT_STORAGE_HOST|CHANNEL_MANAGER_WEBHOOK_HOST|PAYMENT_WEBHOOK_HOST)$' \
             --add-host router-backoffice:127.0.0.1 \
+            --add-host router-host:127.0.0.1 \
             --add-host keycloak:127.0.0.1 \
             --add-host frontend-admin:127.0.0.1 \
+            --add-host frontend-host:127.0.0.1 \
             --add-host authentication:127.0.0.1 \
             --add-host minio:127.0.0.1 \
             --add-host ota:127.0.0.1 \
@@ -109,6 +117,8 @@ jobs:
         run: |
           ./scripts/Compose-Supergraph.ps1
           git diff --exit-code -- router/backoffice/supergraph.graphql
+          ./scripts/Compose-HostSupergraph.ps1
+          git diff --exit-code -- router/host/supergraph.graphql
 
   edge-smoke:
     runs-on: ubuntu-latest
@@ -132,6 +142,18 @@ jobs:
             'http://127.0.0.1:18080/graphql?query=%7Bviewer%7BaccountId%7D%7D')"
           test "$status" = '401'
           test "$(cat /tmp/vistay-anonymous-response.json)" = \
+            '{"errors":[{"message":"Authentication is required.","extensions":{"code":"UNAUTHENTICATED"}}]}'
+
+          curl --fail --silent --show-error --head \
+            --header 'Host: host-api.localhost' \
+            http://127.0.0.1:18080/_edge/ready
+
+          status="$(curl --silent --show-error --output /tmp/vistay-host-anonymous-response.json --write-out '%{http_code}' \
+            --header 'Host: host-api.localhost' \
+            --header 'X-CSRF-Token: host-edge-smoke' \
+            'http://127.0.0.1:18080/graphql?query=%7BmyProfile%7BaccountId%7D%7D')"
+          test "$status" = '401'
+          test "$(cat /tmp/vistay-host-anonymous-response.json)" = \
             '{"errors":[{"message":"Authentication is required.","extensions":{"code":"UNAUTHENTICATED"}}]}'
 
           curl --fail --silent --show-error --head \

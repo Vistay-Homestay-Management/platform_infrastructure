@@ -1,9 +1,9 @@
 # Host identity realm runbook
 
-This runbook covers the `vistay-host` realm contract from SCRUM-808. It owns
-Keycloak realm behavior, local email capture, and the enable/disable gate. It
-does not implement invitation business logic, Host edge federation, or a local
-credential/session store.
+This runbook covers the `vistay-host` realm contract from SCRUM-808 and the
+edge handoff from SCRUM-816. It owns Keycloak realm behavior, local email
+capture, and the enable/disable gate. It does not implement invitation
+business logic or a local credential/session store.
 
 ## Ownership boundary
 
@@ -49,7 +49,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-KeycloakContrac
 
 Before enabling the Host realm in an environment, the release operator must
 also pass the full edge/JWT validation and the Host smoke flow owned by
-SCRUM-816. This task does not add Host routes to Nginx or a Host router.
+SCRUM-816. The Host edge uses a separate `host-api.localhost` GraphQL host and
+`host.localhost` Web host; its router trusts only the `vistay-host` issuer and
+`vistay-host-api` audience and exposes only the profile fields approved by the
+Host supergraph.
+
+Run the edge contract gate from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-HostEdgeTopology.ps1
+```
+
+The gate is static and secret-redacted. A release smoke must additionally call
+`https://host-api.localhost/graphql` with a real Host token and verify that
+Backoffice/customer/wrong-audience tokens, hostile origins, unlisted GraphQL
+fields, and `/actuator` paths are rejected. The Host GraphQL router never falls
+back to the Backoffice graph.
 
 The gate verifies:
 
@@ -69,11 +84,12 @@ deployment artifact may set the realm to enabled only after the contract, edge,
 issuer/audience, and smoke gates pass and production SMTP values resolve from
 the environment secret manager. Keep the default import disabled until then.
 
-To roll back, use the reviewed Keycloak administration procedure to set
-`vistay-host.enabled=false`, stop Host ingress, and retain all users and their
-audit history. Do not delete the realm or recreate users. Re-run the two
-contract tests and the edge smoke check; a disabled realm must converge to the
-documented `404` discovery behavior while Backoffice remains healthy.
+To roll back, stop or remove the Host ingress servers/router, then use the
+reviewed Keycloak administration procedure to set `vistay-host.enabled=false`.
+Retain all users and their audit history; do not delete the realm or recreate
+users. Re-run the realm and Host edge contract tests plus the edge smoke check;
+a disabled realm must converge to the documented `404` discovery behavior while
+Backoffice routes and the Backoffice router remain healthy and unchanged.
 
 Keycloak realm import is a bootstrap operation and does not mutate an existing
 realm. Shared-environment changes therefore require an explicit reviewed
