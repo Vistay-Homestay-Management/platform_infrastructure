@@ -396,8 +396,32 @@ enum link__Purpose {
   EXECUTION
 }
 
+input MarkAllNotificationsReadInput
+  @join__type(graph: NOTIFICATION)
+{
+  throughCursor: Cursor!
+  idempotencyKey: String!
+}
+
+type MarkAllNotificationsReadPayload
+  @join__type(graph: NOTIFICATION)
+{
+  markedCount: Int!
+  throughCursor: Cursor!
+  inboxRevision: Int!
+}
+
+input MarkNotificationReadInput
+  @join__type(graph: NOTIFICATION)
+{
+  notificationId: ID!
+  expectedVersion: Int!
+  idempotencyKey: String!
+}
+
 type Mutation
   @join__type(graph: BOOKING)
+  @join__type(graph: NOTIFICATION)
   @join__type(graph: PAYMENT)
   @join__type(graph: USER)
 {
@@ -407,6 +431,29 @@ type Mutation
   applyPropertyPriceOverride(input: ApplyPropertyPriceOverrideInput!): AppliedPropertyPriceOverride! @join__field(graph: BOOKING) @authenticated
   publishPropertyRateProfileVersion(input: PublishPropertyRateProfileVersionInput!): PricingProfilePublication! @join__field(graph: BOOKING) @authenticated
   createPropertyPriceQuoteSnapshot(input: CreatePropertyPriceQuoteSnapshotInput!): PropertyPriceQuoteSnapshot! @join__field(graph: BOOKING) @authenticated
+
+  """
+  Mark one recipient-owned notification read with optimistic concurrency.
+  """
+  markNotificationRead(input: MarkNotificationReadInput!): Notification! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:read"]])
+
+  """Mark all recipient-owned notifications through a durable cursor read."""
+  markAllNotificationsRead(input: MarkAllNotificationsReadInput!): MarkAllNotificationsReadPayload! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:read"]])
+
+  """Update only the authenticated recipient's preferences."""
+  updateNotificationPreferences(input: UpdateNotificationPreferencesInput!): NotificationPreferenceConnection! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:preferences:manage"]])
+
+  """Publish an immutable template revision after validation."""
+  publishNotificationTemplate(input: PublishNotificationTemplateInput!): NotificationTemplate! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:template:publish"]])
+
+  """Retire a template without deleting its historical revisions."""
+  retireNotificationTemplate(input: RetireNotificationTemplateInput!): NotificationTemplate! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:template:publish"]])
+
+  """Request one bounded delivery retry or repair action."""
+  retryNotificationDelivery(input: RetryNotificationDeliveryInput!): NotificationDelivery! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:delivery:retry"]])
+
+  """Resolve a recipient exception through an auditable repair action."""
+  resolveNotificationRecipientException(input: ResolveRecipientExceptionInput!): NotificationRecipientException! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:recipient-exception:repair"]])
   createVietQrPaymentIntent(input: CreateVietQrPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   cancelPaymentIntent(input: CancelPaymentIntentInput!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
@@ -428,6 +475,18 @@ type Notification
   channels: [NotificationChannel!]!
   createdAt: DateTime!
   readAt: DateTime
+
+  """Additive V2 metadata; nullable for legacy V1 notifications."""
+  notificationType: String
+  priority: NotificationPriority
+  reference: NotificationReference
+  templateKey: String
+  templateRevision: Int
+  policyRevision: Int
+  inboxRevision: Int
+  requiredChannels: [NotificationChannel!]!
+  optionalChannels: [NotificationChannel!]!
+  version: Int
 }
 
 enum NotificationCategory
@@ -435,6 +494,10 @@ enum NotificationCategory
 {
   WELCOME @join__enumValue(graph: NOTIFICATION)
   SECURITY @join__enumValue(graph: NOTIFICATION)
+  BOOKING @join__enumValue(graph: NOTIFICATION)
+  OPERATIONS @join__enumValue(graph: NOTIFICATION)
+  FINANCE @join__enumValue(graph: NOTIFICATION)
+  SYSTEM @join__enumValue(graph: NOTIFICATION)
 }
 
 enum NotificationChannel
@@ -445,11 +508,310 @@ enum NotificationChannel
   PUSH @join__enumValue(graph: NOTIFICATION)
 }
 
+enum NotificationCircuitState
+  @join__type(graph: NOTIFICATION)
+{
+  CLOSED @join__enumValue(graph: NOTIFICATION)
+  OPEN @join__enumValue(graph: NOTIFICATION)
+  HALF_OPEN @join__enumValue(graph: NOTIFICATION)
+}
+
+type NotificationConnection
+  @join__type(graph: NOTIFICATION)
+{
+  nodes: [Notification!]!
+  pageInfo: NotificationPageInfo!
+  unread: UnreadNotificationCount!
+}
+
+enum NotificationCursorState
+  @join__type(graph: NOTIFICATION)
+{
+  ACTIVE @join__enumValue(graph: NOTIFICATION)
+  EXPIRED @join__enumValue(graph: NOTIFICATION)
+  INVALID @join__enumValue(graph: NOTIFICATION)
+  RESYNC_REQUIRED @join__enumValue(graph: NOTIFICATION)
+}
+
+type NotificationDelivery
+  @join__type(graph: NOTIFICATION)
+{
+  id: ID!
+  notificationId: ID!
+  channel: NotificationChannel!
+  status: NotificationDeliveryStatus!
+  provider: String
+  templateRevision: Int
+  policyRevision: Int
+  destinationMasked: String
+  contactSnapshotRevision: Int
+  attemptCount: Int!
+  maximumAttempts: Int!
+  nextAttemptAt: DateTime
+  lastErrorCode: String
+  lastErrorClass: NotificationErrorClass
+  providerMessageId: String
+  revision: Int!
+  updatedAt: DateTime!
+}
+
+enum NotificationDeliveryGuarantee
+  @join__type(graph: NOTIFICATION)
+{
+  AT_LEAST_ONCE @join__enumValue(graph: NOTIFICATION)
+}
+
+enum NotificationDeliveryStatus
+  @join__type(graph: NOTIFICATION)
+{
+  QUEUED @join__enumValue(graph: NOTIFICATION)
+  PROCESSING @join__enumValue(graph: NOTIFICATION)
+  ACCEPTED @join__enumValue(graph: NOTIFICATION)
+  SENT @join__enumValue(graph: NOTIFICATION)
+  DELIVERED @join__enumValue(graph: NOTIFICATION)
+  READ @join__enumValue(graph: NOTIFICATION)
+  FAILED @join__enumValue(graph: NOTIFICATION)
+  BOUNCED @join__enumValue(graph: NOTIFICATION)
+  DEAD_LETTERED @join__enumValue(graph: NOTIFICATION)
+  CANCELLED @join__enumValue(graph: NOTIFICATION)
+}
+
+enum NotificationErrorClass
+  @join__type(graph: NOTIFICATION)
+{
+  TRANSIENT @join__enumValue(graph: NOTIFICATION)
+  PERMANENT @join__enumValue(graph: NOTIFICATION)
+  RATE_LIMITED @join__enumValue(graph: NOTIFICATION)
+  PROVIDER_OUTAGE @join__enumValue(graph: NOTIFICATION)
+  INVALID_CONTACT @join__enumValue(graph: NOTIFICATION)
+  BOUNCED @join__enumValue(graph: NOTIFICATION)
+  UNKNOWN @join__enumValue(graph: NOTIFICATION)
+}
+
+enum NotificationExceptionStatus
+  @join__type(graph: NOTIFICATION)
+{
+  OPEN @join__enumValue(graph: NOTIFICATION)
+  RESOLVED @join__enumValue(graph: NOTIFICATION)
+  IGNORED @join__enumValue(graph: NOTIFICATION)
+  EXPIRED @join__enumValue(graph: NOTIFICATION)
+}
+
+enum NotificationExceptionType
+  @join__type(graph: NOTIFICATION)
+{
+  NO_RECIPIENT @join__enumValue(graph: NOTIFICATION)
+  AMBIGUOUS_RECIPIENT @join__enumValue(graph: NOTIFICATION)
+  CROSS_PARTITION @join__enumValue(graph: NOTIFICATION)
+  MISSING_CONTACT @join__enumValue(graph: NOTIFICATION)
+  INVALID_CONTACT @join__enumValue(graph: NOTIFICATION)
+  UNVERIFIED_CONTACT @join__enumValue(graph: NOTIFICATION)
+  OPTIONAL_SUPPRESSED @join__enumValue(graph: NOTIFICATION)
+  DEPENDENCY_UNAVAILABLE @join__enumValue(graph: NOTIFICATION)
+}
+
+enum NotificationFieldGroup
+  @join__type(graph: NOTIFICATION)
+{
+  SUMMARY @join__enumValue(graph: NOTIFICATION)
+  DOCUMENT @join__enumValue(graph: NOTIFICATION)
+  PII @join__enumValue(graph: NOTIFICATION)
+  TRUST_DETAIL @join__enumValue(graph: NOTIFICATION)
+  INTERNAL_AUDIT @join__enumValue(graph: NOTIFICATION)
+}
+
+input NotificationInboxInput
+  @join__type(graph: NOTIFICATION)
+{
+  afterCursor: Cursor
+  limit: Int = 25
+  unreadOnly: Boolean = false
+  category: NotificationCategory
+}
+
+type NotificationPageInfo
+  @join__type(graph: NOTIFICATION)
+{
+  hasNextPage: Boolean!
+  endCursor: Cursor
+  startCursor: Cursor
+  cursorState: NotificationCursorState!
+  retainedFrom: Cursor
+
+  """
+  Set when the supplied cursor is expired and list reconciliation is needed.
+  """
+  reconcileFrom: Cursor
+}
+
+type NotificationPreference
+  @join__type(graph: NOTIFICATION)
+{
+  id: ID!
+  notificationType: String!
+  channel: NotificationChannel!
+  enabled: Boolean!
+
+  """True for IN_APP and policy-required EMAIL delivery."""
+  required: Boolean!
+  quietHours: QuietHours
+  timeZoneId: String!
+  revision: Int!
+  updatedAt: DateTime!
+}
+
+type NotificationPreferenceConnection
+  @join__type(graph: NOTIFICATION)
+{
+  nodes: [NotificationPreference!]!
+  revision: Int!
+}
+
+input NotificationPreferenceUpdateInput
+  @join__type(graph: NOTIFICATION)
+{
+  notificationType: String!
+  channel: NotificationChannel!
+  enabled: Boolean!
+  quietHours: QuietHoursInput
+  timeZoneId: String!
+  expectedVersion: Int!
+}
+
+enum NotificationPriority
+  @join__type(graph: NOTIFICATION)
+{
+  LOW @join__enumValue(graph: NOTIFICATION)
+  NORMAL @join__enumValue(graph: NOTIFICATION)
+  HIGH @join__enumValue(graph: NOTIFICATION)
+  URGENT @join__enumValue(graph: NOTIFICATION)
+}
+
+type NotificationProviderHealth
+  @join__type(graph: NOTIFICATION)
+{
+  provider: String!
+  status: NotificationProviderStatus!
+  circuitState: NotificationCircuitState!
+  failureRate: Float!
+  latencyMilliseconds: Int!
+  retryAfterSeconds: Int
+  checkedAt: DateTime!
+}
+
+enum NotificationProviderStatus
+  @join__type(graph: NOTIFICATION)
+{
+  HEALTHY @join__enumValue(graph: NOTIFICATION)
+  DEGRADED @join__enumValue(graph: NOTIFICATION)
+  UNAVAILABLE @join__enumValue(graph: NOTIFICATION)
+}
+
+type NotificationRecipientException
+  @join__type(graph: NOTIFICATION)
+{
+  id: ID!
+  notificationId: ID!
+  recipientAccountId: ID!
+  recipientKind: NotificationRecipientKind!
+  exceptionType: NotificationExceptionType!
+  status: NotificationExceptionStatus!
+  reasonCode: String!
+  resolutionAction: NotificationResolutionAction
+  destinationMasked: String
+  contactSnapshotRevision: Int
+  revision: Int!
+  createdAt: DateTime!
+  resolvedAt: DateTime
+}
+
+enum NotificationRecipientKind
+  @join__type(graph: NOTIFICATION)
+{
+  DIRECT_ACCOUNT @join__enumValue(graph: NOTIFICATION)
+  ORGANIZATION_ROLE @join__enumValue(graph: NOTIFICATION)
+  BRANCH_ROLE @join__enumValue(graph: NOTIFICATION)
+  BOOKING_PARTY @join__enumValue(graph: NOTIFICATION)
+  EXPLICIT_SUBSCRIPTION @join__enumValue(graph: NOTIFICATION)
+}
+
+type NotificationReference
+  @join__type(graph: NOTIFICATION)
+{
+  type: String!
+  id: ID!
+  actionUrl: String
+}
+
+enum NotificationResolutionAction
+  @join__type(graph: NOTIFICATION)
+{
+  RE_RESOLVE @join__enumValue(graph: NOTIFICATION)
+  SUPPRESS @join__enumValue(graph: NOTIFICATION)
+  ROUTE_ALTERNATE @join__enumValue(graph: NOTIFICATION)
+  CANCEL @join__enumValue(graph: NOTIFICATION)
+}
+
 type NotificationStreamEvent
   @join__type(graph: NOTIFICATION)
 {
   cursor: Cursor!
   notification: Notification!
+
+  """The event schema version used to render this frame, when available."""
+  eventVersion: Int
+
+  """The durable notification revision used for client deduplication."""
+  notificationRevision: Int
+
+  """Always AT_LEAST_ONCE; exactly-once display is not promised."""
+  deliveryGuarantee: NotificationDeliveryGuarantee
+}
+
+type NotificationTemplate
+  @join__type(graph: NOTIFICATION)
+{
+  id: ID!
+  templateKey: String!
+  channel: NotificationChannel!
+  locale: String!
+  status: NotificationTemplateStatus!
+  revision: Int!
+  policyRevision: Int!
+  requiredVariables: [String!]!
+  subject: String
+
+  """Document field; never include credentials or provider payloads."""
+  body: String
+  immutable: Boolean!
+  createdAt: DateTime!
+  publishedAt: DateTime
+  retiredAt: DateTime
+}
+
+type NotificationTemplateConnection
+  @join__type(graph: NOTIFICATION)
+{
+  nodes: [NotificationTemplate!]!
+  pageInfo: NotificationPageInfo!
+}
+
+input NotificationTemplateQueryInput
+  @join__type(graph: NOTIFICATION)
+{
+  templateKey: String
+  channel: NotificationChannel
+  status: NotificationTemplateStatus
+  afterCursor: Cursor
+  limit: Int = 25
+}
+
+enum NotificationTemplateStatus
+  @join__type(graph: NOTIFICATION)
+{
+  DRAFT @join__enumValue(graph: NOTIFICATION)
+  PUBLISHED @join__enumValue(graph: NOTIFICATION)
+  RETIRED @join__enumValue(graph: NOTIFICATION)
 }
 
 enum OperatorInventoryBlockType
@@ -838,6 +1200,20 @@ type PublishedPropertyPriceQuotePreview
   baseQuote: PropertyPriceQuote!
 }
 
+input PublishNotificationTemplateInput
+  @join__type(graph: NOTIFICATION)
+{
+  templateKey: String!
+  channel: NotificationChannel!
+  locale: String!
+  subject: String
+  body: String!
+  requiredVariables: [String!]!
+  policyRevision: Int!
+  expectedVersion: Int
+  idempotencyKey: String!
+}
+
 input PublishPropertyRateProfileVersionInput
   @join__type(graph: BOOKING)
 {
@@ -866,6 +1242,29 @@ type Query
   activePropertyRateProfileVersion(propertyId: ID!, checkInDate: String!, checkOutDate: String!): PricingProfilePublication! @join__field(graph: BOOKING) @authenticated
   previewPublishedPropertyPriceQuote(input: PublishedPropertyPriceQuoteInput!): PublishedPropertyPriceQuotePreview! @join__field(graph: BOOKING) @authenticated
   propertyPriceQuoteSnapshot(id: ID!): PropertyPriceQuoteSnapshot! @join__field(graph: BOOKING) @authenticated
+
+  """List this viewer's durable inbox using an exclusive cursor."""
+  notificationInbox(input: NotificationInboxInput): NotificationConnection! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:read"]])
+
+  """Return the unread count at a durable inbox revision."""
+  unreadNotificationCount: UnreadNotificationCount! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:read"]])
+
+  """Read notification preferences for the authenticated recipient."""
+  notificationPreferences: NotificationPreferenceConnection! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:read"]])
+
+  """List template revisions visible to notification operators."""
+  notificationTemplates(input: NotificationTemplateQueryInput): NotificationTemplateConnection! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:template:read"]])
+
+  """
+  Inspect one delivery without exposing raw destination or provider payload.
+  """
+  notificationDelivery(id: ID!): NotificationDelivery! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:operations:read"]])
+
+  """Inspect bounded provider health and circuit state."""
+  notificationProviderHealth: [NotificationProviderHealth!]! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:operations:read"]])
+
+  """List recipient exceptions for authorized support operations."""
+  notificationRecipientExceptions(input: RecipientExceptionQueryInput): RecipientExceptionConnection! @join__field(graph: NOTIFICATION) @authenticated @requiresScopes(scopes: [["notifications:recipient-exception:read"]])
   paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
   myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
@@ -874,6 +1273,36 @@ type Query
   authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
   authorizationChangeRequests(status: AuthorizationChangeStatus = PENDING): [AuthorizationChangeRequest!]! @join__field(graph: USER) @authenticated
   authorizationAudit(targetSubjectId: ID): [AuthorizationAuditEvent!]! @join__field(graph: USER) @authenticated
+}
+
+type QuietHours
+  @join__type(graph: NOTIFICATION)
+{
+  start: String!
+  end: String!
+}
+
+input QuietHoursInput
+  @join__type(graph: NOTIFICATION)
+{
+  start: String!
+  end: String!
+}
+
+type RecipientExceptionConnection
+  @join__type(graph: NOTIFICATION)
+{
+  nodes: [NotificationRecipientException!]!
+  pageInfo: NotificationPageInfo!
+}
+
+input RecipientExceptionQueryInput
+  @join__type(graph: NOTIFICATION)
+{
+  status: NotificationExceptionStatus
+  exceptionType: NotificationExceptionType
+  afterCursor: Cursor
+  limit: Int = 25
 }
 
 input ReduceAuthorizationScopesInput
@@ -910,11 +1339,39 @@ input RequestAuthorizationChangeInput
 
 scalar requiresScopes__Scope
 
+input ResolveRecipientExceptionInput
+  @join__type(graph: NOTIFICATION)
+{
+  exceptionId: ID!
+  action: NotificationResolutionAction!
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
+}
+
 input RetainedPermissionScopesInput
   @join__type(graph: USER)
 {
   permissionCode: String!
   scopes: [DataScope!]!
+}
+
+input RetireNotificationTemplateInput
+  @join__type(graph: NOTIFICATION)
+{
+  templateId: ID!
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
+}
+
+input RetryNotificationDeliveryInput
+  @join__type(graph: NOTIFICATION)
+{
+  deliveryId: ID!
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
 }
 
 enum StayProduct
@@ -931,9 +1388,18 @@ type Subscription
   """
   Streams this viewer's durable inbox strictly after `afterCursor`. A null
   cursor starts at the earliest retained entry. Delivery is at least once, so
-  clients deduplicate by `notification.id` and persist each received cursor.
+  clients deduplicate by `notification.id` plus `notification.inboxRevision`
+  and persist each received cursor.
   """
   notificationStream(afterCursor: Cursor): NotificationStreamEvent! @authenticated @requiresScopes(scopes: [["notifications:read"]])
+}
+
+type UnreadNotificationCount
+  @join__type(graph: NOTIFICATION)
+{
+  count: Int!
+  asOfCursor: Cursor!
+  inboxRevision: Int!
 }
 
 input UpdateMyProfileInput
@@ -944,5 +1410,12 @@ input UpdateMyProfileInput
   avatarMediaId: ID
   expectedVersion: Int!
   reason: String!
+  idempotencyKey: String!
+}
+
+input UpdateNotificationPreferencesInput
+  @join__type(graph: NOTIFICATION)
+{
+  updates: [NotificationPreferenceUpdateInput!]!
   idempotencyKey: String!
 }
