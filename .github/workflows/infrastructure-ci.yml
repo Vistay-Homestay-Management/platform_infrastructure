@@ -43,6 +43,7 @@ jobs:
           ./scripts/Test-PostmanInventoryCommands.ps1
           ./scripts/Test-PostmanInventoryManagement.ps1
           ./scripts/Test-PostmanInventoryLiveRunner.ps1
+          ./scripts/Test-PostmanHostIdentity.ps1 -StaticOnly
       - name: Validate Host realm and local mail capture contract
         shell: pwsh
         run: ./scripts/Test-HostRealmContract.ps1
