@@ -13,8 +13,9 @@ browser and mobile clients use Authorization Code + PKCE (`S256`); password and
 implicit grants are disabled.
 
 Backoffice browser and mobile access tokens include audience
-`vistay-backoffice-api`, the string claim `account_type=ADMIN`, and the default
-scope `notifications:read`. The Auth facade service account is limited to the
+`vistay-backoffice-api`, the string claim `account_type=ADMIN`, `profile_id`,
+and client roles projected from User Service. Runtime permissions, partitions,
+and business scopes are not token claims. The Auth facade service account is limited to the
 Backoffice realm's `manage-users` and `query-users` roles. Its import uses the
 `${KEYCLOAK_ADMIN_CLIENT_SECRET}` environment placeholder; provision that value
 from a secret manager and never add the resolved secret to this repository.

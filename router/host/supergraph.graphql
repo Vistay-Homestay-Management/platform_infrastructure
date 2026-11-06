@@ -1,0 +1,143 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.4", for: EXECUTION)
+  @link(url: "https://specs.apollo.dev/authenticated/v0.1", for: SECURITY)
+{
+  query: Query
+  mutation: Mutation
+}
+
+directive @authenticated on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+directive @join__directive(graphs: [join__Graph!], name: String!, args: join__DirectiveArguments) repeatable on SCHEMA | OBJECT | INTERFACE | FIELD_DEFINITION
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean, overrideLabel: String) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+scalar join__DirectiveArguments
+
+scalar join__FieldSet
+
+enum join__Graph {
+  PROPERTY @join__graph(name: "property", url: "http://service-property:8080/graphql")
+  USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type Mutation
+  @join__type(graph: PROPERTY)
+  @join__type(graph: USER)
+{
+  setPropertyAttributeValue(input: PropertyAttributeValueInput!): PropertyAttributeValue! @join__field(graph: PROPERTY) @authenticated
+  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
+}
+
+type PersonalProfile
+  @join__type(graph: USER)
+{
+  accountId: ID!
+  profileId: ID!
+  displayName: String!
+  email: String!
+  contactPhone: String
+  avatarMediaId: ID
+  version: Int!
+  updatedAt: String!
+  replayed: Boolean!
+}
+
+type PropertyAttributeDefinition
+  @join__type(graph: PROPERTY)
+{
+  id: ID!
+  code: String!
+  active: Boolean!
+  rowVersion: String!
+  versionId: ID!
+  version: Int!
+  status: String!
+  label: String!
+  description: String
+  groupCode: String!
+  dataType: String!
+  validationJson: String!
+  applicabilityJson: String!
+  visibility: String!
+  requiredOnPublish: Boolean!
+  filterable: Boolean!
+  displayOrder: Int!
+  unitLabel: String
+  createdByAccountId: ID!
+  approvedByAccountId: ID
+  reason: String!
+}
+
+type PropertyAttributeValue
+  @join__type(graph: PROPERTY)
+{
+  code: String!
+  label: String!
+  dataType: String!
+  visibility: String!
+  valueJson: String!
+  valueVersion: String!
+  updatedAt: String!
+}
+
+input PropertyAttributeValueInput
+  @join__type(graph: PROPERTY)
+{
+  propertyId: ID!
+  attributeCode: String!
+  textValue: String
+  integerValue: Int
+  decimalValue: String
+  booleanValue: Boolean
+  dateValue: String
+  optionCodes: [String!]
+  expectedVersion: String
+}
+
+type Query
+  @join__type(graph: PROPERTY)
+  @join__type(graph: USER)
+{
+  propertyAttributeCatalog(includeDrafts: Boolean! = false): [PropertyAttributeDefinition!]! @join__field(graph: PROPERTY) @authenticated
+  propertyAttributeValues(propertyId: ID!): [PropertyAttributeValue!]! @join__field(graph: PROPERTY) @authenticated
+  myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
+}
+
+input UpdateMyProfileInput
+  @join__type(graph: USER)
+{
+  displayName: String!
+  contactPhone: String
+  avatarMediaId: ID
+  expectedVersion: Int!
+  reason: String!
+  idempotencyKey: String!
+}

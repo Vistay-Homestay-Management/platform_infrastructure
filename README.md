@@ -24,7 +24,8 @@ only the Epic 01 services are needed. Running plain `docker compose up` is not
 equivalent because application services live in `compose.full.yaml` profiles.
 
 The profile contains PostgreSQL, Redis, Kafka, Keycloak, Authentication, User,
-Notification, Finance, Payment, the Admin frontend, Hive Router, and Nginx. `full` additionally
+Notification, Finance, Payment, the Admin and Host frontends, separate Backoffice/Host
+Hive Routers, and Nginx. `full` additionally
 starts the bounded contexts scheduled for later epics. The checked-in
 `.env.example` is for isolated local/CI smoke tests only.
 
@@ -32,7 +33,8 @@ Important trust boundaries:
 
 - Nginx alone publishes the public HTTP port. Keycloak admin endpoints stay internal.
 - VietQR callbacks remain disabled until the production HTTPS and merchant UAT gates pass.
-- Only the Backoffice realm is exposed during Epic 01; Host and Customer are deferred.
+- The Host edge boundary is allow-listed but the checked-in Host realm remains disabled
+  until its issuer/audience and smoke gates pass; Customer remains deferred.
 - Kafka uses TLS, distinct SCRAM principals, deny-by-default ACLs, and exactly
   the reviewed versioned contract topics, including Booking pricing publication
   and inventory block changes.
@@ -45,8 +47,10 @@ Run the static gates with:
 
 ```powershell
 ./scripts/Test-EdgeTopology.ps1 -IncludeEpic01
+./scripts/Test-HostEdgeTopology.ps1
 ./scripts/Test-KeycloakContract.ps1
 ./scripts/Compose-Supergraph.ps1
+./scripts/Compose-HostSupergraph.ps1
 ./scripts/Test-Observability.ps1
 ```
 
@@ -64,12 +68,16 @@ unauthenticated security checks. Account bootstrap, notification streaming,
 payment mutations, pricing authoring/publication, inventory block commands, and
 VietQR callbacks require explicit opt-in flags.
 
+For the current backend capability and frontend handoff snapshot, see
+[`summary/`](summary/README.md).
+
 ## Federation contracts
 
 `router/backoffice/subgraphs` vendors the reviewed User, Notification, and Payment SDLs
-from `platform_contracts`. `Compose-Supergraph.ps1` composes them into the
-checked-in Hive Router supergraph. Update the source commit comment whenever a
-contract is refreshed.
+from `platform_contracts`. `router/host` contains a separate profile-only User graph and
+Host JWT router; it must never reuse the Backoffice router configuration. The Backoffice
+and Host supergraphs are composed independently into checked-in Hive Router artifacts.
+Update the source commit comment whenever a contract is refreshed.
 
 ## Jira catalog synchronization
 

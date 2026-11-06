@@ -2,6 +2,13 @@ extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@authenticated"])
 
 type Query {
+  roleCatalog(accountType: AccountType!): [RolePolicyRole!]! @authenticated
+  role(accountType: AccountType!, code: String!): RolePolicyRole! @authenticated
+  permissionCatalog: [PermissionCatalogEntry!]! @authenticated
+  rolePolicyChangeRequests(status: RolePolicyChangeStatus = PENDING): [RolePolicyChangeRequest!]! @authenticated
+  loyaltyPrograms: [LoyaltyProgram!]! @authenticated
+  loyaltyProgramChangeRequests(status: String): [LoyaltyProgramChangeRequest!]! @authenticated
+  myLoyaltyProfile: LoyaltyProfile! @authenticated
   viewer: BackofficeViewer! @authenticated
   myProfile: PersonalProfile! @authenticated
   authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @authenticated
@@ -12,6 +19,15 @@ type Query {
 }
 
 type Mutation {
+  requestCreateRole(input: CreateRoleInput!): RolePolicyChangeRequest! @authenticated
+  requestRolePermissionChange(input: RolePermissionChangeInput!): RolePolicyChangeRequest! @authenticated
+  approveRolePolicyChange(id: ID!, reason: String!): RolePolicyChangeRequest! @authenticated
+  rejectRolePolicyChange(id: ID!, reason: String!): RolePolicyChangeRequest! @authenticated
+  requestDeactivateRole(input: DeactivateRoleInput!): RolePolicyChangeRequest! @authenticated
+  requestLoyaltyProgramChange(input: LoyaltyProgramChangeInput!): LoyaltyProgramChangeRequest! @authenticated
+  approveLoyaltyProgramChange(id: ID!, reason: String!): LoyaltyProgramChangeRequest! @authenticated
+  rejectLoyaltyProgramChange(id: ID!, reason: String!): LoyaltyProgramChangeRequest! @authenticated
+  adjustQualifyingPoints(input: QualifyingPointAdjustmentInput!): LoyaltyProfile! @authenticated
   updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @authenticated
   requestAuthorizationChange(input: RequestAuthorizationChangeInput!): AuthorizationChangeRequest! @authenticated
   approveAuthorizationChange(id: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationChangeRequest! @authenticated
@@ -57,7 +73,8 @@ input UpdateMyProfileInput {
 }
 
 enum AccountType { CUSTOMER ADMIN HOST }
-enum DataScope { SELF OWN ASSIGNED ALL }
+enum DataScope { SELF OWN ASSIGNED PARTITION ALL }
+enum RolePolicyChangeStatus { PENDING APPROVED REJECTED EXPIRED STALE }
 enum AuthorizationChangeStatus { PENDING APPROVED REJECTED EXPIRED STALE }
 
 type EffectiveGrant { permissionCode: String!, scopes: [DataScope!]! }
@@ -106,6 +123,25 @@ input RequestAuthorizationChangeInput {
   expectedAuthorizationVersion: Int!
   idempotencyKey: String!
 }
+
+type RolePolicyGrant { permissionCode: String!, allowedScopes: [DataScope!]!, partitionTypes: [String!]! }
+type RolePolicyRole { code: String!, displayName: String!, description: String, accountType: AccountType!, systemRole: Boolean!, active: Boolean!, roleVersion: Int!, grants: [RolePolicyGrant!]!, createdAt: String!, updatedAt: String! }
+type PermissionCatalogEntry { code: String!, resource: String!, action: String!, description: String, active: Boolean!, deprecatedAt: String, aliases: [String!]! }
+type RolePolicyChangeRequest { id: ID!, roleCode: String!, requestedBySubjectId: ID!, reviewedBySubjectId: ID, changeType: String!, status: RolePolicyChangeStatus!, expectedRoleVersion: Int, reason: String!, reviewReason: String, expiresAt: String!, createdAt: String! }
+input RolePolicyGrantInput { permissionCode: String!, allowedScopes: [DataScope!]!, partitionTypes: [String!]! = [] }
+input CreateRoleInput { code: String!, displayName: String!, description: String, accountType: AccountType!, grants: [RolePolicyGrantInput!]!, reason: String!, idempotencyKey: String! }
+input RolePermissionChangeInput { roleCode: String!, accountType: AccountType!, addGrants: [RolePolicyGrantInput!]! = [], removePermissionCodes: [String!]! = [], expectedRoleVersion: Int!, reason: String!, idempotencyKey: String! }
+input DeactivateRoleInput { roleCode: String!, accountType: AccountType!, expectedRoleVersion: Int!, reason: String!, idempotencyKey: String! }
+
+type LoyaltyTier { code: String!, displayName: String!, minimumPoints: String!, displayOrder: Int! }
+type LoyaltyProfile { status: String!, qualifyingPoints: String!, currentTier: LoyaltyTier, nextTier: LoyaltyTier, pointsToNextTier: String, policyVersion: Int, asOf: String! }
+type LoyaltyProgramVersion { id: ID!, version: Int!, status: String!, qualificationWindow: String!, rollingWindowDays: Int, effectiveFrom: String!, effectiveTo: String, fingerprint: String!, tiers: [LoyaltyTier!]! }
+type LoyaltyProgram { id: ID!, code: String!, name: String!, scopeType: String!, scopeId: ID, active: Boolean!, rowVersion: String!, versions: [LoyaltyProgramVersion!]! }
+type LoyaltyProgramChangeRequest { id: ID!, programCode: String!, expectedProgramVersion: String, requestedBySubjectId: ID!, reviewedBySubjectId: ID, status: String!, reason: String!, reviewReason: String, createdAt: String!, reviewedAt: String }
+input LoyaltyTierInput { code: String!, displayName: String!, minimumPoints: String!, displayOrder: Int! }
+input LoyaltyEarningRuleInput { code: String!, ruleType: String!, points: String!, amountBlock: String, priority: Int = 0 }
+input LoyaltyProgramChangeInput { code: String!, name: String!, scopeType: String = "GLOBAL", scopeId: ID, qualificationWindow: String = "LIFETIME", rollingWindowDays: Int, effectiveFrom: String!, effectiveTo: String, expectedVersion: String, tiers: [LoyaltyTierInput!]!, earningRules: [LoyaltyEarningRuleInput!]! = [], reason: String!, idempotencyKey: String! }
+input QualifyingPointAdjustmentInput { customerAccountId: ID!, delta: String!, reason: String!, idempotencyKey: String! }
 input RetainedPermissionScopesInput { permissionCode: String!, scopes: [DataScope!]! }
 input ReduceAuthorizationScopesInput {
   assignmentId: ID!

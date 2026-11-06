@@ -78,7 +78,7 @@ function Assert-BackofficeClient {
     Assert-Contract ($Client.publicClient -eq $true) "$($Client.clientId) must be a public client."
     Assert-Contract ($Client.directAccessGrantsEnabled -eq $false) "$($Client.clientId) must disable password grants."
     Assert-Contract ($Client.attributes.'pkce.code.challenge.method' -eq 'S256') "$($Client.clientId) must require PKCE S256."
-    Assert-Contract ($scopeNames -contains 'notifications:read') "$($Client.clientId) must receive notifications:read by default."
+    Assert-Contract ($scopeNames -notcontains 'notifications:read') "$($Client.clientId) must not carry runtime permissions in OAuth scope."
 
     $audienceMapper = @($mappers | Where-Object name -eq 'backoffice-api-audience')
     Assert-Contract ($audienceMapper.Count -eq 1) "$($Client.clientId) must have one API audience mapper."
@@ -93,11 +93,51 @@ function Assert-BackofficeClient {
     Assert-Contract ($accountTypeMapper[0].config.'claim.value' -ceq 'ADMIN') "$($Client.clientId) account_type must be ADMIN."
     Assert-Contract ($accountTypeMapper[0].config.'jsonType.label' -eq 'String') "$($Client.clientId) account_type must be a JSON string."
     Assert-Contract ($accountTypeMapper[0].config.'access.token.claim' -eq 'true') "$($Client.clientId) account_type must be included in access tokens."
+
+    $profileMapper = @($mappers | Where-Object name -eq 'backoffice-profile-id')
+    Assert-Contract ($profileMapper.Count -eq 1) "$($Client.clientId) must have one profile_id mapper."
+    Assert-Contract ($profileMapper[0].protocolMapper -eq 'oidc-usermodel-attribute-mapper') "$($Client.clientId) profile_id must come from a user attribute."
+    Assert-Contract ($profileMapper[0].config.'user.attribute' -eq 'vistay_profile_id') "$($Client.clientId) uses the wrong profile attribute."
+    Assert-Contract ($profileMapper[0].config.'claim.name' -eq 'profile_id') "$($Client.clientId) uses the wrong profile claim."
+    Assert-Contract ($profileMapper[0].config.'access.token.claim' -eq 'true') "$($Client.clientId) profile_id must be included in access tokens."
+}
+
+function Assert-HostRealmCompatibility {
+    param([pscustomobject]$Realm)
+
+    Assert-Contract ($Realm.realm -eq 'vistay-host') 'The deferred Host realm must target vistay-host.'
+    Assert-Contract ($Realm.enabled -eq $false) 'The Host realm must remain disabled until its edge/JWT/smoke gate passes.'
+    Assert-Contract ($Realm.registrationAllowed -eq $false) 'The Host realm must not allow self-registration.'
+    Assert-Contract ($Realm.verifyEmail -eq $true) 'The Host realm must require email verification.'
+    Assert-Contract ($Realm.duplicateEmailsAllowed -eq $false) 'The Host realm must reject duplicate emails.'
+    Assert-Contract ($Realm.revokeRefreshToken -eq $true) 'The Host realm must rotate refresh tokens.'
+    Assert-Contract ($Realm.refreshTokenMaxReuse -eq 0) 'The Host realm must reject reused refresh tokens.'
+    Assert-Contract ($Realm.ssoSessionIdleTimeout -eq 1800) 'The Host realm idle session bound must be 30 minutes.'
+    Assert-Contract ($Realm.ssoSessionMaxLifespan -eq 28800) 'The Host realm maximum session bound must be eight hours.'
+
+    $clients = @($Realm.clients)
+    $hostApi = @($clients | Where-Object clientId -eq 'vistay-host-api')
+    $hostWeb = @($clients | Where-Object clientId -eq 'vistay-host-web')
+    Assert-Contract ($hostApi.Count -eq 1 -and $hostApi[0].bearerOnly -eq $true) 'The Host API must be one bearer-only client.'
+    Assert-Contract ($hostWeb.Count -eq 1 -and $hostWeb[0].publicClient -eq $true) 'The Host Web client must be one public client.'
+    Assert-Contract ($hostWeb[0].standardFlowEnabled -eq $true) 'The Host Web client must enable Authorization Code flow.'
+    Assert-Contract ($hostWeb[0].implicitFlowEnabled -eq $false -and $hostWeb[0].directAccessGrantsEnabled -eq $false) 'The Host Web client must disable implicit and password grants.'
+    Assert-Contract (@($hostWeb[0].redirectUris).Count -eq 1 -and $hostWeb[0].redirectUris[0] -eq '${VISTAY_HOST_WEB_REDIRECT_URI}') 'The Host Web redirect must be an exact environment placeholder.'
+    Assert-Contract (-not $hostWeb[0].redirectUris[0].Contains('*')) 'The Host Web redirect must not contain a wildcard.'
+    Assert-Contract ($hostWeb[0].attributes.'pkce.code.challenge.method' -eq 'S256') 'The Host Web client must require PKCE S256.'
+
+    $requiredActions = @($Realm.requiredActions)
+    $verifyEmail = @($requiredActions | Where-Object alias -eq 'VERIFY_EMAIL')
+    $updatePassword = @($requiredActions | Where-Object alias -eq 'UPDATE_PASSWORD')
+    Assert-Contract ($verifyEmail.Count -eq 1 -and $updatePassword.Count -eq 1) 'The Host realm must define email verification and password setup actions.'
+    Assert-Contract ($verifyEmail[0].priority -lt $updatePassword[0].priority) 'Host email verification must precede password setup.'
+    Assert-Contract ($Realm.smtpServer.password -eq '${VISTAY_HOST_SMTP_PASSWORD}') 'The Host realm must not contain a resolved SMTP password.'
 }
 
 $realmPath = Join-Path $repositoryRoot $RealmFile
 $realm = Get-Content -Raw -LiteralPath $realmPath | ConvertFrom-Json
 Assert-Contract ($realm.realm -eq 'vistay-backoffice') 'The realm contract test must target vistay-backoffice.'
+Assert-Contract ($realm.accessTokenLifespan -eq 300) 'Backoffice access tokens must expire after five minutes.'
 Assert-Contract ($realm.enabled -eq $true) 'The Backoffice realm must be active for Epic 01.'
 Assert-Contract ($realm.resetPasswordAllowed -eq $true) 'Backoffice login must expose Keycloak credential recovery.'
 Assert-Contract ($realm.revokeRefreshToken -eq $true) 'Backoffice refresh tokens must rotate after use.'
@@ -115,11 +155,22 @@ foreach ($deferredRealmFile in @(
         "$($deferredRealm.realm) must remain disabled until its release is activated."
     Assert-Contract ($deferredRealm.registrationAllowed -eq $false) `
         "$($deferredRealm.realm) must not accept registration during Epic 01."
+    if ($deferredRealm.realm -eq 'vistay-host') {
+        Assert-HostRealmCompatibility -Realm $deferredRealm
+    }
 }
 
-$notificationScopes = @($realm.clientScopes | Where-Object name -eq 'notifications:read')
-Assert-Contract ($notificationScopes.Count -eq 1) 'The realm must define exactly one notifications:read client scope.'
-Assert-Contract ($notificationScopes[0].attributes.'include.in.token.scope' -eq 'true') 'notifications:read must appear in the OAuth scope claim.'
+$notificationScopes = @($realm.clientScopes | Where-Object name -like 'notification*')
+Assert-Contract ($notificationScopes.Count -eq 0) 'Runtime permissions must not be encoded as OAuth client scopes.'
+
+$rolesScope = @($realm.clientScopes | Where-Object name -eq 'roles')
+Assert-Contract ($rolesScope.Count -eq 1) 'The realm must define one roles client scope.'
+$realmRoleMappers = @($rolesScope[0].protocolMappers | Where-Object protocolMapper -eq 'oidc-usermodel-realm-role-mapper')
+Assert-Contract ($realmRoleMappers.Count -eq 0) 'Realm roles must not be emitted into access tokens.'
+$apiRoleMappers = @($rolesScope[0].protocolMappers | Where-Object name -eq 'vistay-api-client-roles')
+Assert-Contract ($apiRoleMappers.Count -eq 1) 'The realm must define one API client-role mapper.'
+Assert-Contract ($apiRoleMappers[0].config.'usermodel.clientRoleMapping.clientId' -eq 'vistay-backoffice-api') 'Client roles must be sourced from vistay-backoffice-api.'
+Assert-Contract ($apiRoleMappers[0].config.'claim.name' -eq 'resource_access.${client_id}.roles') 'Client roles must use the standard resource_access claim.'
 
 $realmClients = @($realm.clients)
 foreach ($clientId in @('vistay-backoffice-web', 'vistay-backoffice-mobile')) {
@@ -257,4 +308,4 @@ $serviceClaims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($pa
 $tokenRoles = @($serviceClaims.resource_access.'realm-management'.roles | Sort-Object)
 Assert-Contract (($tokenRoles -join ',') -eq 'manage-users,query-users') "The Auth facade token roles do not match the contract; got '$($tokenRoles -join ',')'."
 
-Write-Host 'Keycloak Backoffice contract passed (imported realm and service-account token).'
+Write-Host 'Keycloak Backoffice and deferred Host/Customer realm compatibility contract passed (imported realm and service-account token).'

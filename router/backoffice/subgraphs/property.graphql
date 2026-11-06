@@ -1,0 +1,19 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@authenticated"])
+
+type Query {
+  propertyAttributeCatalog(includeDrafts: Boolean! = false): [PropertyAttributeDefinition!]! @authenticated
+  propertyAttributeValues(propertyId: ID!): [PropertyAttributeValue!]! @authenticated
+}
+type Mutation {
+  createPropertyAttributeDraft(input: PropertyAttributeDraftInput!): PropertyAttributeDefinition! @authenticated
+  publishPropertyAttribute(definitionId: ID!, expectedRowVersion: String!, reason: String!): PropertyAttributeDefinition! @authenticated
+  retirePropertyAttribute(definitionId: ID!, expectedRowVersion: String!, reason: String!): PropertyAttributeDefinition! @authenticated
+  setPropertyAttributeValue(input: PropertyAttributeValueInput!): PropertyAttributeValue! @authenticated
+}
+type PropertyAttributeDefinition { id: ID!, code: String!, active: Boolean!, rowVersion: String!, versionId: ID!, version: Int!, status: String!, label: String!, description: String, groupCode: String!, dataType: String!, validationJson: String!, applicabilityJson: String!, visibility: String!, requiredOnPublish: Boolean!, filterable: Boolean!, displayOrder: Int!, unitLabel: String, createdByAccountId: ID!, approvedByAccountId: ID, reason: String! }
+type PropertyAttributeValue { code: String!, label: String!, dataType: String!, visibility: String!, valueJson: String!, valueVersion: String!, updatedAt: String! }
+input PropertyAttributeDraftInput { code: String!, label: String!, description: String, groupCode: String!, dataType: String!, validation: PropertyAttributeRulesInput, applicability: PropertyAttributeApplicabilityInput, visibility: String!, requiredOnPublish: Boolean = false, filterable: Boolean = false, displayOrder: Int = 0, unitLabel: String, options: [PropertyAttributeOptionInput!], reason: String!, idempotencyKey: String! }
+input PropertyAttributeRulesInput { minimum: String, maximum: String, minLength: Int, maxLength: Int, pattern: String }
+input PropertyAttributeApplicabilityInput { propertyTypes: [String!], operatingModels: [String!] }
+input PropertyAttributeOptionInput { code: String!, label: String!, displayOrder: Int }
+input PropertyAttributeValueInput { propertyId: ID!, attributeCode: String!, textValue: String, integerValue: Int, decimalValue: String, booleanValue: Boolean, dateValue: String, optionCodes: [String!], expectedVersion: String }

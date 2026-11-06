@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) {
 $configuration = $configurationJson | ConvertFrom-Json
 $serviceNames = @($configuration.services.PSObject.Properties.Name)
 
-foreach ($requiredService in @('nginx', 'keycloak', 'router-backoffice')) {
+foreach ($requiredService in @('nginx', 'keycloak', 'router-backoffice', 'router-host')) {
     if ($requiredService -notin $serviceNames) {
         throw "Missing required edge service: $requiredService"
     }
@@ -60,7 +60,7 @@ if ('gateway' -in $serviceNames) {
 }
 
 $immutableImagePattern = '^[^\s:@]+(?:/[^\s:@]+)*:[^\s@]+@sha256:[0-9a-f]{64}$'
-foreach ($edgeService in @('nginx', 'keycloak', 'router-backoffice')) {
+foreach ($edgeService in @('nginx', 'keycloak', 'router-backoffice', 'router-host')) {
     $image = $configuration.services.$edgeService.image
     if ($image -notmatch $immutableImagePattern) {
         throw "$edgeService must use an immutable version tag and sha256 digest; got '$image'."
@@ -91,7 +91,7 @@ if ($publicServices.Count -ne 1 -or $publicServices[0] -ne 'nginx') {
     throw "Nginx must be the sole public ingress; found: $($publicServices -join ', ')."
 }
 
-foreach ($internalService in @('keycloak', 'router-backoffice')) {
+foreach ($internalService in @('keycloak', 'router-backoffice', 'router-host')) {
     $publishedPorts = @($configuration.services.$internalService.ports | Where-Object { $null -ne $_ })
     if ($publishedPorts.Count -ne 0) {
         throw "$internalService must not publish host ports."
@@ -99,7 +99,7 @@ foreach ($internalService in @('keycloak', 'router-backoffice')) {
 }
 
 $nginxTargets = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'nginx/templates/default.conf.template')
-foreach ($expectedTarget in @('router-backoffice:4000', 'keycloak:8080', 'authentication:8080', 'minio:9000', 'ota:8080', 'payment:8080')) {
+foreach ($expectedTarget in @('router-backoffice:4000', 'router-host:4000', 'keycloak:8080', 'authentication:8080', 'frontend-host:8080', 'minio:9000', 'ota:8080', 'payment:8080')) {
     if (-not $nginxTargets.Contains($expectedTarget)) {
         throw "Nginx route is missing expected internal target '$expectedTarget'."
     }
@@ -360,8 +360,9 @@ foreach ($requiredSetting in @('enabled: true', 'require_authentication: true', 
     }
 }
 
-if (-not $nginxTargets.Contains('^/(realms/vistay-backoffice/|resources/)')) {
-    throw 'Nginx must allowlist only the active Backoffice realm and resource paths.'
+if (-not $nginxTargets.Contains('^/realms/vistay-host/') -or
+    -not $nginxTargets.Contains('^/(realms/vistay-backoffice/|resources/)')) {
+    throw 'Nginx must allowlist only the Backoffice and Host realm/resource paths.'
 }
 if ($nginxTargets -match '(?m)^\s*location\s+/\s*\{\s*proxy_pass\s+http://keycloak:8080') {
     throw 'Nginx must not expose the entire Keycloak surface, including /admin.'

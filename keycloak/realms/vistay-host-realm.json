@@ -13,6 +13,47 @@
   "failureFactor": 5,
   "waitIncrementSeconds": 60,
   "maxFailureWaitSeconds": 900,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 28800,
+  "clientSessionIdleTimeout": 1800,
+  "clientSessionMaxLifespan": 28800,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 300,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "actionTokenGeneratedByAdminLifespan": 900,
+  "actionTokenGeneratedByUserLifespan": 900,
+  "requiredActions": [
+    {
+      "alias": "VERIFY_EMAIL",
+      "name": "Verify email",
+      "providerId": "VERIFY_EMAIL",
+      "enabled": true,
+      "defaultAction": true,
+      "priority": 10
+    },
+    {
+      "alias": "UPDATE_PASSWORD",
+      "name": "Update password",
+      "providerId": "UPDATE_PASSWORD",
+      "enabled": true,
+      "defaultAction": true,
+      "priority": 20
+    }
+  ],
+  "smtpServer": {
+    "host": "${VISTAY_HOST_SMTP_HOST}",
+    "port": "${VISTAY_HOST_SMTP_PORT}",
+    "from": "${VISTAY_HOST_SMTP_FROM}",
+    "auth": "${VISTAY_HOST_SMTP_AUTH}",
+    "starttls": "${VISTAY_HOST_SMTP_STARTTLS}",
+    "ssl": "${VISTAY_HOST_SMTP_SSL}",
+    "user": "${VISTAY_HOST_SMTP_USER}",
+    "password": "${VISTAY_HOST_SMTP_PASSWORD}"
+  },
   "roles": {
     "realm": [
       { "name": "HOST_ADMIN", "description": "Host organization administrator" },
@@ -25,7 +66,12 @@
       "name": "ViStay Host API",
       "enabled": true,
       "protocol": "openid-connect",
-      "bearerOnly": true
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false
     },
     {
       "clientId": "vistay-host-web",
@@ -37,11 +83,13 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://host.localhost/*"],
-      "webOrigins": ["http://host.localhost"],
+      "fullScopeAllowed": false,
+      "redirectUris": ["${VISTAY_HOST_WEB_REDIRECT_URI}"],
+      "webOrigins": ["${VISTAY_HOST_WEB_ORIGIN}"],
+      "defaultClientScopes": ["profile", "email", "roles", "web-origins"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://host.localhost/*"
+        "post.logout.redirect.uris": "${VISTAY_HOST_POST_LOGOUT_REDIRECT_URI}"
       },
       "protocolMappers": [
         {

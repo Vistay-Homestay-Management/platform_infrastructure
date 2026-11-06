@@ -3,6 +3,9 @@ x-service-environment: &service-environment
   KEYCLOAK_BACKOFFICE_ISSUER: ${BACKOFFICE_JWT_ISSUERS}
   KEYCLOAK_BACKOFFICE_JWKS_URI: ${BACKOFFICE_JWKS_URL}
   KEYCLOAK_BACKOFFICE_AUDIENCE: ${BACKOFFICE_JWT_AUDIENCES}
+  KEYCLOAK_HOST_ISSUER: ${HOST_JWT_ISSUERS}
+  KEYCLOAK_HOST_JWKS_URI: ${HOST_JWKS_URL}
+  KEYCLOAK_HOST_AUDIENCE: ${HOST_JWT_AUDIENCES}
   # Compatibility for bounded contexts that have not yet adopted the explicit
   # public-issuer/internal-JWKS variable names.
   OIDC_ISSUER_URI: ${BACKOFFICE_JWT_ISSUERS}
@@ -37,6 +40,30 @@ x-spring-service-healthcheck: &spring-service-healthcheck
   retries: 12
 
 services:
+  mailpit:
+    image: ${MAILPIT_IMAGE:-axllent/mailpit:v1.26.2}
+    profiles: ["epic01", "full"]
+    environment:
+      MP_SMTP_BIND_ADDR: 0.0.0.0:1025
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+      MP_MAX_MESSAGES: "1000"
+    expose:
+      - "1025"
+      - "8025"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks: [vistay]
+
+  keycloak:
+    depends_on:
+      mailpit:
+        condition: service_started
+
   authentication:
     container_name: service-authentication
     build: ../service_authentication
@@ -170,6 +197,7 @@ services:
     profiles: ["full"]
     environment:
       <<: *service-environment
+      SPRING_PROFILES_ACTIVE: docker
       DB_NAME: vistay_booking_db
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
