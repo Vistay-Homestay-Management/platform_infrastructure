@@ -78,7 +78,7 @@ function Assert-BackofficeClient {
     Assert-Contract ($Client.publicClient -eq $true) "$($Client.clientId) must be a public client."
     Assert-Contract ($Client.directAccessGrantsEnabled -eq $false) "$($Client.clientId) must disable password grants."
     Assert-Contract ($Client.attributes.'pkce.code.challenge.method' -eq 'S256') "$($Client.clientId) must require PKCE S256."
-    Assert-Contract ($scopeNames -contains 'notifications:read') "$($Client.clientId) must receive notifications:read by default."
+    Assert-Contract ($scopeNames -notcontains 'notifications:read') "$($Client.clientId) must not carry runtime permissions in OAuth scope."
 
     $audienceMapper = @($mappers | Where-Object name -eq 'backoffice-api-audience')
     Assert-Contract ($audienceMapper.Count -eq 1) "$($Client.clientId) must have one API audience mapper."
@@ -93,6 +93,13 @@ function Assert-BackofficeClient {
     Assert-Contract ($accountTypeMapper[0].config.'claim.value' -ceq 'ADMIN') "$($Client.clientId) account_type must be ADMIN."
     Assert-Contract ($accountTypeMapper[0].config.'jsonType.label' -eq 'String') "$($Client.clientId) account_type must be a JSON string."
     Assert-Contract ($accountTypeMapper[0].config.'access.token.claim' -eq 'true') "$($Client.clientId) account_type must be included in access tokens."
+
+    $profileMapper = @($mappers | Where-Object name -eq 'backoffice-profile-id')
+    Assert-Contract ($profileMapper.Count -eq 1) "$($Client.clientId) must have one profile_id mapper."
+    Assert-Contract ($profileMapper[0].protocolMapper -eq 'oidc-usermodel-attribute-mapper') "$($Client.clientId) profile_id must come from a user attribute."
+    Assert-Contract ($profileMapper[0].config.'user.attribute' -eq 'vistay_profile_id') "$($Client.clientId) uses the wrong profile attribute."
+    Assert-Contract ($profileMapper[0].config.'claim.name' -eq 'profile_id') "$($Client.clientId) uses the wrong profile claim."
+    Assert-Contract ($profileMapper[0].config.'access.token.claim' -eq 'true') "$($Client.clientId) profile_id must be included in access tokens."
 }
 
 function Assert-HostRealmCompatibility {
@@ -130,6 +137,7 @@ function Assert-HostRealmCompatibility {
 $realmPath = Join-Path $repositoryRoot $RealmFile
 $realm = Get-Content -Raw -LiteralPath $realmPath | ConvertFrom-Json
 Assert-Contract ($realm.realm -eq 'vistay-backoffice') 'The realm contract test must target vistay-backoffice.'
+Assert-Contract ($realm.accessTokenLifespan -eq 300) 'Backoffice access tokens must expire after five minutes.'
 Assert-Contract ($realm.enabled -eq $true) 'The Backoffice realm must be active for Epic 01.'
 Assert-Contract ($realm.resetPasswordAllowed -eq $true) 'Backoffice login must expose Keycloak credential recovery.'
 Assert-Contract ($realm.revokeRefreshToken -eq $true) 'Backoffice refresh tokens must rotate after use.'
@@ -152,9 +160,17 @@ foreach ($deferredRealmFile in @(
     }
 }
 
-$notificationScopes = @($realm.clientScopes | Where-Object name -eq 'notifications:read')
-Assert-Contract ($notificationScopes.Count -eq 1) 'The realm must define exactly one notifications:read client scope.'
-Assert-Contract ($notificationScopes[0].attributes.'include.in.token.scope' -eq 'true') 'notifications:read must appear in the OAuth scope claim.'
+$notificationScopes = @($realm.clientScopes | Where-Object name -like 'notification*')
+Assert-Contract ($notificationScopes.Count -eq 0) 'Runtime permissions must not be encoded as OAuth client scopes.'
+
+$rolesScope = @($realm.clientScopes | Where-Object name -eq 'roles')
+Assert-Contract ($rolesScope.Count -eq 1) 'The realm must define one roles client scope.'
+$realmRoleMappers = @($rolesScope[0].protocolMappers | Where-Object protocolMapper -eq 'oidc-usermodel-realm-role-mapper')
+Assert-Contract ($realmRoleMappers.Count -eq 0) 'Realm roles must not be emitted into access tokens.'
+$apiRoleMappers = @($rolesScope[0].protocolMappers | Where-Object name -eq 'vistay-api-client-roles')
+Assert-Contract ($apiRoleMappers.Count -eq 1) 'The realm must define one API client-role mapper.'
+Assert-Contract ($apiRoleMappers[0].config.'usermodel.clientRoleMapping.clientId' -eq 'vistay-backoffice-api') 'Client roles must be sourced from vistay-backoffice-api.'
+Assert-Contract ($apiRoleMappers[0].config.'claim.name' -eq 'resource_access.${client_id}.roles') 'Client roles must use the standard resource_access claim.'
 
 $realmClients = @($realm.clients)
 foreach ($clientId in @('vistay-backoffice-web', 'vistay-backoffice-mobile')) {

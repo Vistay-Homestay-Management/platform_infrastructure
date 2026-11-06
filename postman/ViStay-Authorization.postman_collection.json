@@ -267,7 +267,7 @@
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const payload = pm.response.json();",
             "pm.test('ASSIGNED booking allowed', () => pm.expect(payload.errors).to.be.undefined);",
-            "pm.test('commercial total is hidden without booking:read_sensitive', () => pm.expect(payload.data.booking.totalAmount).to.eql(null));"
+            "pm.test('commercial total is hidden without booking-sensitive:read', () => pm.expect(payload.data.booking.totalAmount).to.eql(null));"
           ] } }]
         },
         {

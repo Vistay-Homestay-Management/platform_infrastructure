@@ -1,0 +1,10 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@authenticated"])
+
+type Query {
+  propertyAttributeCatalog(includeDrafts: Boolean! = false): [PropertyAttributeDefinition!]! @authenticated
+  propertyAttributeValues(propertyId: ID!): [PropertyAttributeValue!]! @authenticated
+}
+type Mutation { setPropertyAttributeValue(input: PropertyAttributeValueInput!): PropertyAttributeValue! @authenticated }
+type PropertyAttributeDefinition { id: ID!, code: String!, active: Boolean!, rowVersion: String!, versionId: ID!, version: Int!, status: String!, label: String!, description: String, groupCode: String!, dataType: String!, validationJson: String!, applicabilityJson: String!, visibility: String!, requiredOnPublish: Boolean!, filterable: Boolean!, displayOrder: Int!, unitLabel: String, createdByAccountId: ID!, approvedByAccountId: ID, reason: String! }
+type PropertyAttributeValue { code: String!, label: String!, dataType: String!, visibility: String!, valueJson: String!, valueVersion: String!, updatedAt: String! }
+input PropertyAttributeValueInput { propertyId: ID!, attributeCode: String!, textValue: String, integerValue: Int, decimalValue: String, booleanValue: Boolean, dateValue: String, optionCodes: [String!], expectedVersion: String }
