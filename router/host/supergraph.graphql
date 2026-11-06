@@ -30,6 +30,7 @@ scalar join__DirectiveArguments
 scalar join__FieldSet
 
 enum join__Graph {
+  PROPERTY @join__graph(name: "property", url: "http://service-property:8080/graphql")
   USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
 }
 
@@ -48,9 +49,11 @@ enum link__Purpose {
 }
 
 type Mutation
+  @join__type(graph: PROPERTY)
   @join__type(graph: USER)
 {
-  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @authenticated
+  setPropertyAttributeValue(input: PropertyAttributeValueInput!): PropertyAttributeValue! @join__field(graph: PROPERTY) @authenticated
+  updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
 }
 
 type PersonalProfile
@@ -67,10 +70,65 @@ type PersonalProfile
   replayed: Boolean!
 }
 
+type PropertyAttributeDefinition
+  @join__type(graph: PROPERTY)
+{
+  id: ID!
+  code: String!
+  active: Boolean!
+  rowVersion: String!
+  versionId: ID!
+  version: Int!
+  status: String!
+  label: String!
+  description: String
+  groupCode: String!
+  dataType: String!
+  validationJson: String!
+  applicabilityJson: String!
+  visibility: String!
+  requiredOnPublish: Boolean!
+  filterable: Boolean!
+  displayOrder: Int!
+  unitLabel: String
+  createdByAccountId: ID!
+  approvedByAccountId: ID
+  reason: String!
+}
+
+type PropertyAttributeValue
+  @join__type(graph: PROPERTY)
+{
+  code: String!
+  label: String!
+  dataType: String!
+  visibility: String!
+  valueJson: String!
+  valueVersion: String!
+  updatedAt: String!
+}
+
+input PropertyAttributeValueInput
+  @join__type(graph: PROPERTY)
+{
+  propertyId: ID!
+  attributeCode: String!
+  textValue: String
+  integerValue: Int
+  decimalValue: String
+  booleanValue: Boolean
+  dateValue: String
+  optionCodes: [String!]
+  expectedVersion: String
+}
+
 type Query
+  @join__type(graph: PROPERTY)
   @join__type(graph: USER)
 {
-  myProfile: PersonalProfile! @authenticated
+  propertyAttributeCatalog(includeDrafts: Boolean! = false): [PropertyAttributeDefinition!]! @join__field(graph: PROPERTY) @authenticated
+  propertyAttributeValues(propertyId: ID!): [PropertyAttributeValue!]! @join__field(graph: PROPERTY) @authenticated
+  myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
 }
 
 input UpdateMyProfileInput

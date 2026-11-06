@@ -5,6 +5,7 @@ type Query {
   myProfile: PersonalProfile! @authenticated
 }
 
+
 type Mutation {
   updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @authenticated
 }

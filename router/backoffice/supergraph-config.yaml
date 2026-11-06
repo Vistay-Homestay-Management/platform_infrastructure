@@ -8,6 +8,10 @@ subgraphs:
     routing_url: http://service-booking:8080/graphql
     schema:
       file: subgraphs/booking.graphql
+  property:
+    routing_url: http://service-property:8080/graphql
+    schema:
+      file: subgraphs/property.graphql
   notification:
     routing_url: http://service-notification:8080/graphql
     schema:

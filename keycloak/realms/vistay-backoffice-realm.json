@@ -13,6 +13,8 @@
   "editUsernameAllowed": false,
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 28800,
   "bruteForceProtected": true,
@@ -94,27 +96,14 @@
           }
         },
         {
-          "name": "client roles",
+          "name": "vistay-api-client-roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-client-role-mapper",
           "consentRequired": false,
           "config": {
             "user.attribute": "foo",
+            "usermodel.clientRoleMapping.clientId": "vistay-backoffice-api",
             "claim.name": "resource_access.${client_id}.roles",
-            "jsonType.label": "String",
-            "multivalued": "true",
-            "access.token.claim": "true",
-            "introspection.token.claim": "true"
-          }
-        },
-        {
-          "name": "realm roles",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-realm-role-mapper",
-          "consentRequired": false,
-          "config": {
-            "user.attribute": "foo",
-            "claim.name": "realm_access.roles",
             "jsonType.label": "String",
             "multivalued": "true",
             "access.token.claim": "true",
@@ -439,15 +428,6 @@
           }
         }
       ]
-    },
-    {
-      "name": "notifications:read",
-      "description": "Allows the Backoffice client to read its notification inbox and event stream",
-      "protocol": "openid-connect",
-      "attributes": {
-        "display.on.consent.screen": "false",
-        "include.in.token.scope": "true"
-      }
     }
   ],
   "clients": [
@@ -480,8 +460,7 @@
         "acr",
         "roles",
         "profile",
-        "email",
-        "notifications:read"
+        "email"
       ],
       "protocolMappers": [
         {
@@ -514,6 +493,21 @@
           "config": {
             "claim.name": "account_type",
             "claim.value": "ADMIN",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "backoffice-profile-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "vistay_profile_id",
+            "claim.name": "profile_id",
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
@@ -584,6 +578,21 @@
             "userinfo.token.claim": "true",
             "introspection.token.claim": "true"
           }
+        },
+        {
+          "name": "backoffice-profile-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "vistay_profile_id",
+            "claim.name": "profile_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
         }
       ]
     },
@@ -608,8 +617,7 @@
         "acr",
         "roles",
         "profile",
-        "email",
-        "notifications:read"
+        "email"
       ],
       "protocolMappers": [
         {
@@ -642,6 +650,21 @@
           "config": {
             "claim.name": "account_type",
             "claim.value": "ADMIN",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "backoffice-profile-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "vistay_profile_id",
+            "claim.name": "profile_id",
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",

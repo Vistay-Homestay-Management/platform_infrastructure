@@ -197,6 +197,7 @@ services:
     profiles: ["full"]
     environment:
       <<: *service-environment
+      SPRING_PROFILES_ACTIVE: docker
       DB_NAME: vistay_booking_db
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}

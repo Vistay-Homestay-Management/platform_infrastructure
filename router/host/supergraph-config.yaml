@@ -4,3 +4,7 @@ subgraphs:
     routing_url: http://service-user:8080/graphql
     schema:
       file: subgraphs/user.graphql
+  property:
+    routing_url: http://service-property:8080/graphql
+    schema:
+      file: subgraphs/property.graphql
