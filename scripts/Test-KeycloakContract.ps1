@@ -144,6 +144,13 @@ Assert-Contract ($realm.revokeRefreshToken -eq $true) 'Backoffice refresh tokens
 Assert-Contract ($realm.refreshTokenMaxReuse -eq 0) 'A rotated Backoffice refresh token must not be reusable.'
 Assert-Contract ($realm.ssoSessionIdleTimeout -eq 1800) 'Backoffice sessions must expire after 30 idle minutes.'
 Assert-Contract ($realm.ssoSessionMaxLifespan -eq 28800) 'Backoffice sessions must not exceed an eight-hour shift.'
+Assert-Contract ($realm.smtpServer.host -eq '${VISTAY_BACKOFFICE_SMTP_HOST}') 'Backoffice SMTP host must be environment-backed.'
+Assert-Contract ($realm.smtpServer.port -eq '${VISTAY_BACKOFFICE_SMTP_PORT}') 'Backoffice SMTP port must be environment-backed.'
+Assert-Contract ($realm.smtpServer.from -eq '${VISTAY_BACKOFFICE_SMTP_FROM}') 'Backoffice SMTP sender must be environment-backed.'
+Assert-Contract ($realm.smtpServer.password -eq '${VISTAY_BACKOFFICE_SMTP_PASSWORD}') 'Backoffice SMTP password must remain an unresolved secret reference.'
+$exampleEnvPath = Join-Path $repositoryRoot $EnvFile
+Assert-Contract ((Get-EnvFileValue -Path $exampleEnvPath -Name 'VISTAY_BACKOFFICE_SMTP_HOST') -eq 'mailpit') 'Local Backoffice email must use the Mailpit SMTP sink.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-EnvFileValue -Path $exampleEnvPath -Name 'VISTAY_BACKOFFICE_SMTP_FROM'))) 'Local Backoffice email must define a sender address.'
 
 foreach ($deferredRealmFile in @(
     'keycloak/realms/vistay-host-realm.json',
@@ -155,6 +162,11 @@ foreach ($deferredRealmFile in @(
         "$($deferredRealm.realm) must remain disabled until its release is activated."
     Assert-Contract ($deferredRealm.registrationAllowed -eq $false) `
         "$($deferredRealm.realm) must not accept registration during Epic 01."
+    if ($deferredRealm.realm -eq 'vistay-customer') {
+        Assert-Contract ($deferredRealm.smtpServer.host -eq '${VISTAY_CUSTOMER_SMTP_HOST}') 'Customer SMTP host must be environment-backed.'
+        Assert-Contract ($deferredRealm.smtpServer.from -eq '${VISTAY_CUSTOMER_SMTP_FROM}') 'Customer SMTP sender must be environment-backed.'
+        Assert-Contract ($deferredRealm.smtpServer.password -eq '${VISTAY_CUSTOMER_SMTP_PASSWORD}') 'Customer SMTP password must remain an unresolved secret reference.'
+    }
     if ($deferredRealm.realm -eq 'vistay-host') {
         Assert-HostRealmCompatibility -Realm $deferredRealm
     }
@@ -251,6 +263,9 @@ $adminHeaders = @{
     Host = $HostHeader
     Authorization = "Bearer $adminToken"
 }
+$importedRealm = Invoke-RestMethod -Uri "$baseUri/admin/realms/vistay-backoffice" -Headers $adminHeaders
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($importedRealm.smtpServer.host)) 'Imported Backoffice realm is missing its SMTP host.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace($importedRealm.smtpServer.from)) 'Imported Backoffice realm is missing its SMTP sender.'
 $importedClients = @(Invoke-RestMethod -Uri "$baseUri/admin/realms/vistay-backoffice/clients" -Headers $adminHeaders)
 
 foreach ($clientId in @('vistay-backoffice-web', 'vistay-backoffice-mobile')) {
