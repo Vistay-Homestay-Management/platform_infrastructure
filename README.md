@@ -31,7 +31,8 @@ starts the bounded contexts scheduled for later epics. The checked-in
 
 Local verification and recovery messages are captured by the internal Mailpit
 service. SMTP settings are configured independently for the Backoffice, Customer,
-and Host realms through their `VISTAY_*_SMTP_*` environment variables. After
+and Host realms through their `VISTAY_*_SMTP_*` environment variables. Open the
+local inbox at `http://localhost:8025`; the UI is bound to loopback only. After
 changing SMTP values for an existing Keycloak database, reconcile the realms with:
 
 ```powershell
