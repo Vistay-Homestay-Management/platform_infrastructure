@@ -193,6 +193,7 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
     $kafkaInitializer = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'kafka/init.sh')
     foreach ($authorizationConsumer in @(
         'grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-authorization-cache',
+        'grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-keycloak-role-projection',
         'grant_consumer vistay-booking vistay.user.authorization-changed.v1 vistay-booking-service-authorization-cache',
         'grant_consumer vistay-finance vistay.user.authorization-changed.v1 vistay-finance-service-authorization-cache',
         'grant_consumer vistay-payment vistay.user.authorization-changed.v1 vistay-payment-service-authorization-cache',

@@ -216,7 +216,7 @@ Assert-Contract ($facade.secret -ceq '${KEYCLOAK_ADMIN_CLIENT_SECRET}') 'The rea
 $serviceUsers = @($realm.users | Where-Object serviceAccountClientId -eq 'vistay-auth-facade')
 Assert-Contract ($serviceUsers.Count -eq 1) 'The realm must define exactly one Auth facade service account user.'
 $configuredRoles = @($serviceUsers[0].clientRoles.'realm-management' | Sort-Object)
-Assert-Contract (($configuredRoles -join ',') -eq 'manage-users,query-users') 'The Auth facade must have exactly manage-users and query-users realm-management roles.'
+Assert-Contract (($configuredRoles -join ',') -eq 'manage-clients,manage-users,query-clients,query-users') 'The Auth facade must have only the realm-management roles required to reconcile API client roles and users.'
 
 if ([string]::IsNullOrWhiteSpace($RuntimeBaseUri)) {
     Write-Host 'Keycloak Backoffice contract passed (static realm definition).'
