@@ -140,7 +140,9 @@ $mailpit = $configuration.services.mailpit
 Assert-Contract ($null -ne $mailpit) 'Full Compose must define the local Mailpit service.'
 Assert-Contract (@($mailpit.profiles) -contains 'epic01' -and @($mailpit.profiles) -contains 'full') 'Mailpit must be limited to the local Epic 01/full profiles.'
 Assert-Contract ($mailpit.image -notmatch '(^|:)latest(@|$)') 'Mailpit must not use the latest image tag.'
-Assert-Contract (@($mailpit.ports | Where-Object { $null -ne $_ }).Count -eq 0) 'Mailpit must not publish SMTP or UI ports to the host.'
+Assert-Contract (@($mailpit.ports | Where-Object { $null -ne $_ }).Count -eq 1) 'Mailpit must publish exactly one loopback-only UI port.'
+$mailpitUiPort = @($mailpit.ports | Where-Object { $null -ne $_ })[0]
+Assert-Contract ($mailpitUiPort.host_ip -eq '127.0.0.1' -and $mailpitUiPort.target -eq 8025 -and $mailpitUiPort.published -eq '8025') 'Mailpit UI must bind to 127.0.0.1:8025 only.'
 Assert-Contract (@($mailpit.expose) -contains '1025' -and @($mailpit.expose) -contains '8025') 'Mailpit must expose only its internal SMTP and UI ports.'
 Assert-Contract ($mailpit.environment.MP_SMTP_BIND_ADDR -eq '0.0.0.0:1025') 'Mailpit SMTP must bind only to the Compose network port.'
 Assert-Contract ($mailpit.environment.MP_UI_BIND_ADDR -eq '0.0.0.0:8025') 'Mailpit UI must bind only to the Compose network port.'
