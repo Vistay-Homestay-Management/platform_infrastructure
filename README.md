@@ -29,6 +29,18 @@ Hive Routers, and Nginx. `full` additionally
 starts the bounded contexts scheduled for later epics. The checked-in
 `.env.example` is for isolated local/CI smoke tests only.
 
+Local verification and recovery messages are captured by the internal Mailpit
+service. SMTP settings are configured independently for the Backoffice, Customer,
+and Host realms through their `VISTAY_*_SMTP_*` environment variables. After
+changing SMTP values for an existing Keycloak database, reconcile the realms with:
+
+```powershell
+./scripts/Sync-KeycloakSmtp.ps1
+```
+
+The script reads credentials and SMTP values from the running local Keycloak
+container; it does not require deleting or re-importing a realm.
+
 Important trust boundaries:
 
 - Nginx alone publishes the public HTTP port. Keycloak admin endpoints stay internal.
