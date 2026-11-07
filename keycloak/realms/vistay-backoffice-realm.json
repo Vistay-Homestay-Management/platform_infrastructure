@@ -711,7 +711,9 @@
       "serviceAccountClientId": "vistay-auth-facade",
       "clientRoles": {
         "realm-management": [
+          "manage-clients",
           "manage-users",
+          "query-clients",
           "query-users"
         ]
       }

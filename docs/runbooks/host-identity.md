@@ -13,7 +13,8 @@ business logic or a local credential/session store.
   Keycloak subject. It must not persist passwords, action links, refresh tokens,
   or a parallel JWT.
 - User owns the Host profile and authorization subject.
-- Mailpit is a local-only development sink. It is never a public ingress and
+- Mailpit is a local-only development sink. Its UI binds only to
+  `http://127.0.0.1:8025`; it is never a public ingress and
   never receives production mail.
 
 ## Baseline and local profile
@@ -25,9 +26,10 @@ Customer realm discovery. `.env.example` records the local activation signal as
 already-imported Keycloak realm.
 
 The full local profile adds Mailpit at `mailpit:1025` and `mailpit:8025`. It has
-no published host ports, so the SMTP sink and UI are reachable only from the
-Compose network. The Host realm references SMTP values through environment
-placeholders; no password or resolved secret belongs in this repository.
+one loopback-only UI mapping at `http://127.0.0.1:8025`; SMTP remains reachable
+only from the Compose network. The Host realm references SMTP values through
+environment placeholders; no password or resolved secret belongs in this
+repository.
 
 Render the profile without starting it:
 
@@ -35,8 +37,8 @@ Render the profile without starting it:
 docker compose -f compose.yaml -f compose.full.yaml --env-file .env.example --profile full config --quiet
 ```
 
-For a local disposable run, start the full profile and inspect captured mail
-from a container on the `vistay` network. Do not expose Mailpit through Nginx.
+For a local disposable run, start the full profile and inspect captured mail at
+`http://localhost:8025`. Do not expose Mailpit through Nginx.
 
 ## Contract gate
 
