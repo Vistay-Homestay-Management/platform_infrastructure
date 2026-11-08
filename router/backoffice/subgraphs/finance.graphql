@@ -1,0 +1,18 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@authenticated"])
+
+type Query {
+  financeDashboardSummary: FinanceDashboardSummary! @authenticated
+}
+
+type FinanceDashboardSummary {
+  totalGrossRevenue: String!
+  totalCommissionEarned: String!
+  totalCleaningFees: String!
+  totalAdjustments: String!
+  totalNetPayoutCalculated: String!
+  totalPayableOutstanding: String!
+  totalPayablePaid: String!
+  totalSettlementCount: Int!
+  approvedSettlementCount: Int!
+  paidSettlementCount: Int!
+}
