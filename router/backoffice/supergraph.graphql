@@ -442,6 +442,21 @@ type EffectiveGrant
   scopes: [DataScope!]!
 }
 
+type FinanceDashboardSummary
+  @join__type(graph: FINANCE)
+{
+  totalGrossRevenue: String!
+  totalCommissionEarned: String!
+  totalCleaningFees: String!
+  totalAdjustments: String!
+  totalNetPayoutCalculated: String!
+  totalPayableOutstanding: String!
+  totalPayablePaid: String!
+  totalSettlementCount: Int!
+  approvedSettlementCount: Int!
+  paidSettlementCount: Int!
+}
+
 type InventoryAvailabilityOverlap
   @join__type(graph: BOOKING)
 {
@@ -552,6 +567,7 @@ scalar join__FieldSet
 
 enum join__Graph {
   BOOKING @join__graph(name: "booking", url: "http://service-booking:8080/graphql")
+  FINANCE @join__graph(name: "finance", url: "http://service-finance:8080/graphql")
   NOTIFICATION @join__graph(name: "notification", url: "http://service-notification:8080/graphql")
   PAYMENT @join__graph(name: "payment", url: "http://service-payment:8080/graphql")
   PROPERTY @join__graph(name: "property", url: "http://service-property:8080/graphql")
@@ -1137,6 +1153,42 @@ enum OperatorInventoryBlockType
   MANUAL @join__enumValue(graph: BOOKING)
 }
 
+type OverviewAnalytics
+  @join__type(graph: BOOKING)
+{
+  view: OverviewView!
+  from: String!
+  to: String!
+  generatedAt: String!
+  totalBookings: Int!
+  confirmedBookings: Int!
+  cancelledBookings: Int!
+  guests: Int!
+  bookedProperties: Int!
+  occupiedNights: Int!
+  occupancyRate: String!
+  today: OverviewStayToday!
+  money: [AnalyticsMoney!]!
+}
+
+type OverviewStayToday
+  @join__type(graph: BOOKING)
+{
+  expectedCheckIns: Int!
+  expectedCheckOuts: Int!
+  inHouse: Int!
+  pendingConfirmation: Int!
+  cancelledToday: Int!
+  occupiedProperties: Int!
+}
+
+enum OverviewView
+  @join__type(graph: BOOKING)
+{
+  SYSTEM @join__enumValue(graph: BOOKING)
+  PERSONAL @join__enumValue(graph: BOOKING)
+}
+
 type PaymentIntent
   @join__type(graph: PAYMENT, key: "id")
 {
@@ -1501,6 +1553,14 @@ type PropertyAvailabilityObservation
   overlaps: [InventoryAvailabilityOverlap!]!
 }
 
+type PropertyOperationalSummary
+  @join__type(graph: PROPERTY)
+{
+  activeProperties: Int!
+  maintenanceProperties: Int!
+  propertiesNeedingAttention: Int!
+}
+
 type PropertyPriceFinalQuote
   @join__type(graph: BOOKING)
 {
@@ -1659,6 +1719,7 @@ input QualifyingPointAdjustmentInput
 
 type Query
   @join__type(graph: BOOKING)
+  @join__type(graph: FINANCE)
   @join__type(graph: NOTIFICATION)
   @join__type(graph: PAYMENT)
   @join__type(graph: PROPERTY)
@@ -1667,6 +1728,7 @@ type Query
   bookingPolicyCatalog(includeDrafts: Boolean! = false): [BookingPolicy!]! @join__field(graph: BOOKING) @authenticated
   bookingPolicyChangeRequests(status: String): [BookingPolicyChangeRequest!]! @join__field(graph: BOOKING) @authenticated
   operationsAnalytics(input: AnalyticsRangeInput!): OperationsAnalytics! @join__field(graph: BOOKING) @authenticated
+  overviewAnalytics(view: OverviewView!, input: AnalyticsRangeInput!): OverviewAnalytics! @join__field(graph: BOOKING) @authenticated
   booking(id: ID!): Booking! @join__field(graph: BOOKING) @authenticated
   bookings(status: String, limit: Int = 50): [Booking!]! @join__field(graph: BOOKING) @authenticated
   propertyAvailability(input: PropertyAvailabilityInput!): PropertyAvailabilityObservation! @join__field(graph: BOOKING) @authenticated
@@ -1678,6 +1740,7 @@ type Query
   activePropertyRateProfileVersion(propertyId: ID!, checkInDate: String!, checkOutDate: String!): PricingProfilePublication! @join__field(graph: BOOKING) @authenticated
   previewPublishedPropertyPriceQuote(input: PublishedPropertyPriceQuoteInput!): PublishedPropertyPriceQuotePreview! @join__field(graph: BOOKING) @authenticated
   propertyPriceQuoteSnapshot(id: ID!): PropertyPriceQuoteSnapshot! @join__field(graph: BOOKING) @authenticated
+  financeDashboardSummary: FinanceDashboardSummary! @join__field(graph: FINANCE) @authenticated
 
   """List this viewer's durable inbox using an exclusive cursor."""
   notificationInbox(input: NotificationInboxInput): NotificationConnection! @join__field(graph: NOTIFICATION) @authenticated
@@ -1704,6 +1767,7 @@ type Query
   paymentIntent(id: ID!): PaymentIntent! @join__field(graph: PAYMENT) @authenticated
   propertyAttributeCatalog(includeDrafts: Boolean! = false): [PropertyAttributeDefinition!]! @join__field(graph: PROPERTY) @authenticated
   propertyAttributeValues(propertyId: ID!): [PropertyAttributeValue!]! @join__field(graph: PROPERTY) @authenticated
+  propertyOperationalSummary: PropertyOperationalSummary! @join__field(graph: PROPERTY) @authenticated
   roleCatalog(accountType: AccountType!): [RolePolicyRole!]! @join__field(graph: USER) @authenticated
   role(accountType: AccountType!, code: String!): RolePolicyRole! @join__field(graph: USER) @authenticated
   permissionCatalog: [PermissionCatalogEntry!]! @join__field(graph: USER) @authenticated

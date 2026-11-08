@@ -3,7 +3,9 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@
 type Query {
   propertyAttributeCatalog(includeDrafts: Boolean! = false): [PropertyAttributeDefinition!]! @authenticated
   propertyAttributeValues(propertyId: ID!): [PropertyAttributeValue!]! @authenticated
+  propertyOperationalSummary: PropertyOperationalSummary! @authenticated
 }
+type PropertyOperationalSummary { activeProperties: Int!, maintenanceProperties: Int!, propertiesNeedingAttention: Int! }
 type Mutation {
   createPropertyAttributeDraft(input: PropertyAttributeDraftInput!): PropertyAttributeDefinition! @authenticated
   publishPropertyAttribute(definitionId: ID!, expectedRowVersion: String!, reason: String!): PropertyAttributeDefinition! @authenticated
