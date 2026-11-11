@@ -25,6 +25,14 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
+enum AccountType
+  @join__type(graph: USER)
+{
+  CUSTOMER @join__enumValue(graph: USER)
+  ADMIN @join__enumValue(graph: USER)
+  HOST @join__enumValue(graph: USER)
+}
+
 scalar join__DirectiveArguments
 
 scalar join__FieldSet
@@ -54,6 +62,8 @@ type Mutation
 {
   setPropertyAttributeValue(input: PropertyAttributeValueInput!): PropertyAttributeValue! @join__field(graph: PROPERTY) @authenticated
   updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @join__field(graph: USER) @authenticated
+  requestMyProfileLink(input: RequestProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
+  verifyMyProfileLink(input: VerifyProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
 }
 
 type PersonalProfile
@@ -67,6 +77,19 @@ type PersonalProfile
   avatarMediaId: ID
   version: Int!
   updatedAt: String!
+  replayed: Boolean!
+}
+
+type ProfileAccountLink
+  @join__type(graph: USER)
+{
+  linkId: ID
+  challengeId: ID
+  profileType: AccountType!
+  status: String!
+  maskedRecipient: String
+  expiresAt: String
+  requiresApproval: Boolean!
   replayed: Boolean!
 }
 
@@ -129,6 +152,14 @@ type Query
   propertyAttributeCatalog(includeDrafts: Boolean! = false): [PropertyAttributeDefinition!]! @join__field(graph: PROPERTY) @authenticated
   propertyAttributeValues(propertyId: ID!): [PropertyAttributeValue!]! @join__field(graph: PROPERTY) @authenticated
   myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
+  myProfileLinkStatus: ProfileAccountLink! @join__field(graph: USER) @authenticated
+}
+
+input RequestProfileLinkInput
+  @join__type(graph: USER)
+{
+  displayName: String!
+  cccd: String!
 }
 
 input UpdateMyProfileInput
@@ -140,4 +171,11 @@ input UpdateMyProfileInput
   expectedVersion: Int!
   reason: String!
   idempotencyKey: String!
+}
+
+input VerifyProfileLinkInput
+  @join__type(graph: USER)
+{
+  challengeId: ID!
+  code: String!
 }

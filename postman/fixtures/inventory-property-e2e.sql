@@ -46,20 +46,36 @@ ON CONFLICT (id) DO UPDATE
 SET code = EXCLUDED.code, name = EXCLUDED.name, active = true,
     version = EXCLUDED.version, updated_at = now();
 
+INSERT INTO building_floors (
+    id, building_id, code, name, floor_number, sort_order, floor_type, active
+)
+VALUES (
+    '60000000-0000-4000-8000-000000000400',
+    '60000000-0000-4000-8000-000000000300',
+    'POSTMAN',
+    'Postman Floor',
+    1,
+    1,
+    'RESIDENTIAL',
+    true
+)
+ON CONFLICT (id) DO UPDATE
+SET building_id = EXCLUDED.building_id, code = EXCLUDED.code, name = EXCLUDED.name,
+    floor_number = EXCLUDED.floor_number, sort_order = EXCLUDED.sort_order,
+    floor_type = EXCLUDED.floor_type, active = true, updated_at = now();
+
 INSERT INTO properties (
-    id, building_id, code, name, floor_label, unit_number,
-    operating_model, property_type, capacity, base_price_per_night,
+    id, floor_id, code, name, unit_number,
+    operating_model, capacity, base_price_per_night,
     currency, operational_status, active
 )
 SELECT
     fixture.id,
-    '60000000-0000-4000-8000-000000000300'::uuid,
+    '60000000-0000-4000-8000-000000000400'::uuid,
     fixture.code,
     fixture.name,
-    'POSTMAN',
     fixture.unit_number,
     'OWNED',
-    'APARTMENT',
     2,
     1000000,
     'VND',
@@ -78,9 +94,8 @@ FROM (VALUES
     ('61000000-0000-4000-8000-000000000010'::uuid, 'PM-INV-MANAGEMENT', 'Postman Management Unit', '10')
 ) AS fixture(id, code, name, unit_number)
 ON CONFLICT (id) DO UPDATE
-SET building_id = EXCLUDED.building_id, code = EXCLUDED.code, name = EXCLUDED.name,
-    floor_label = EXCLUDED.floor_label, unit_number = EXCLUDED.unit_number,
-    operating_model = EXCLUDED.operating_model, property_type = EXCLUDED.property_type,
+SET floor_id = EXCLUDED.floor_id, code = EXCLUDED.code, name = EXCLUDED.name,
+    unit_number = EXCLUDED.unit_number, operating_model = EXCLUDED.operating_model,
     capacity = EXCLUDED.capacity, base_price_per_night = EXCLUDED.base_price_per_night,
     currency = EXCLUDED.currency, operational_status = EXCLUDED.operational_status,
     active = true, updated_at = now();

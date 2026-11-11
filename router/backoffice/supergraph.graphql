@@ -89,6 +89,13 @@ input ApplyPropertyPriceOverrideInput
   correlationId: String!
 }
 
+input ApproveProfileLinkInput
+  @join__type(graph: USER)
+{
+  linkId: ID!
+  reason: String!
+}
+
 type AuthorizationAssignment
   @join__type(graph: USER)
 {
@@ -773,6 +780,11 @@ type Mutation
   revokeRoleAssignment(assignmentId: ID!, reason: String!, expectedAuthorizationVersion: Int!): AuthorizationSubject! @join__field(graph: USER) @authenticated
   reduceAuthorizationScopes(input: ReduceAuthorizationScopesInput!): AuthorizationSubject! @join__field(graph: USER) @authenticated
   establishSecondApprover(targetSubjectId: ID!, reason: String!): AuthorizationSubject! @join__field(graph: USER) @authenticated
+  protectProfileIdentityDocument(input: ProtectProfileIdentityDocumentInput!): ProtectedIdentityDocument! @join__field(graph: USER) @authenticated
+  requestMyProfileLink(input: RequestProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
+  verifyMyProfileLink(input: VerifyProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
+  approveProfileLink(input: ApproveProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
+  rejectProfileLink(input: RejectProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
 }
 
 type Notification
@@ -1434,10 +1446,36 @@ input PricingRuleVersionInput
   actionValue: String!
 }
 
+type ProfileAccountLink
+  @join__type(graph: USER)
+{
+  linkId: ID
+  challengeId: ID
+  profileType: AccountType!
+  status: String!
+  maskedRecipient: String
+  expiresAt: String
+  requiresApproval: Boolean!
+  replayed: Boolean!
+}
+
+type ProfileLinkReview
+  @join__type(graph: USER)
+{
+  linkId: ID!
+  profileType: AccountType!
+  profileId: ID!
+  authAccountId: ID!
+  status: String!
+  linkMethod: String!
+  requestedAt: String!
+  maskedRecipient: String
+  displayName: String
+}
+
 input PropertyAttributeApplicabilityInput
   @join__type(graph: PROPERTY)
 {
-  propertyTypes: [String!]
   operatingModels: [String!]
 }
 
@@ -1664,6 +1702,29 @@ type PropertyRateProfileVersion
   rules: [PricingRuleVersion!]!
 }
 
+type ProtectedIdentityDocument
+  @join__type(graph: USER)
+{
+  id: ID!
+  profileType: AccountType!
+  profileId: ID!
+  lookupKeyVersion: Int!
+  encryptionKeyVersion: Int!
+  assuranceLevel: String!
+  rowVersion: String!
+  createdAt: String!
+}
+
+input ProtectProfileIdentityDocumentInput
+  @join__type(graph: USER)
+{
+  profileType: AccountType!
+  profileId: ID!
+  cccd: String!
+  expectedProfileVersion: String!
+  reason: String!
+}
+
 input PublishedPropertyPriceQuoteInput
   @join__type(graph: BOOKING)
 {
@@ -1777,6 +1838,9 @@ type Query
   myLoyaltyProfile: LoyaltyProfile! @join__field(graph: USER) @authenticated
   viewer: BackofficeViewer! @join__field(graph: USER) @authenticated
   myProfile: PersonalProfile! @join__field(graph: USER) @authenticated
+  myProfileLinkStatus: ProfileAccountLink! @join__field(graph: USER) @authenticated
+  profileLinkRequests(profileType: AccountType, status: String = "APPROVAL_PENDING", first: Int = 50): [ProfileLinkReview!]! @join__field(graph: USER) @authenticated
+  userDirectory(accountType: AccountType!, search: String, first: Int = 25, after: String): UserDirectoryPage! @join__field(graph: USER) @authenticated
   authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @join__field(graph: USER) @authenticated
   authorizationSubject(subjectId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
   authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
@@ -1823,6 +1887,13 @@ input ReduceAuthorizationScopesInput
   expectedAuthorizationVersion: Int!
 }
 
+input RejectProfileLinkInput
+  @join__type(graph: USER)
+{
+  linkId: ID!
+  reason: String!
+}
+
 input ReleaseInventoryBlockInput
   @join__type(graph: BOOKING)
 {
@@ -1844,6 +1915,13 @@ input RequestAuthorizationChangeInput
   reason: String!
   expectedAuthorizationVersion: Int!
   idempotencyKey: String!
+}
+
+input RequestProfileLinkInput
+  @join__type(graph: USER)
+{
+  displayName: String!
+  cccd: String!
 }
 
 type ResolvedBookingPolicy
@@ -2012,4 +2090,37 @@ input UpdateNotificationPreferencesInput
 {
   updates: [NotificationPreferenceUpdateInput!]!
   idempotencyKey: String!
+}
+
+type UserDirectoryEntry
+  @join__type(graph: USER)
+{
+  profileId: ID!
+  accountId: ID
+  accountType: AccountType!
+  displayName: String!
+  email: String
+  contactPhone: String
+  status: String!
+  referenceCode: String
+  subtype: String
+  verificationStatus: String
+  joinedOn: String
+  createdAt: String!
+  updatedAt: String!
+}
+
+type UserDirectoryPage
+  @join__type(graph: USER)
+{
+  nodes: [UserDirectoryEntry!]!
+  totalCount: Int!
+  nextCursor: String
+}
+
+input VerifyProfileLinkInput
+  @join__type(graph: USER)
+{
+  challengeId: ID!
+  code: String!
 }

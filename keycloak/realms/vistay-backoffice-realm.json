@@ -3,8 +3,8 @@
   "displayName": "ViStay Backoffice",
   "enabled": true,
   "sslRequired": "external",
-  "registrationAllowed": false,
-  "registrationEmailAsUsername": false,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
   "rememberMe": false,
   "verifyEmail": true,
   "loginWithEmailAllowed": true,
@@ -95,16 +95,6 @@
         "include.in.token.scope": "false"
       },
       "protocolMappers": [
-        {
-          "name": "audience resolve",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-resolve-mapper",
-          "consentRequired": false,
-          "config": {
-            "access.token.claim": "true",
-            "introspection.token.claim": "true"
-          }
-        },
         {
           "name": "vistay-api-client-roles",
           "protocol": "openid-connect",

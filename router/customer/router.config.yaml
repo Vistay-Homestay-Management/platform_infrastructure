@@ -1,0 +1,48 @@
+supergraph:
+  source: file
+  path: /app/schema/supergraph.graphql
+http:
+  host: 0.0.0.0
+  port: 4000
+  graphql_endpoint: /graphql
+jwt:
+  enabled: true
+  require_authentication: true
+  jwks_providers:
+    - source: remote
+      url:
+        from_env: CUSTOMER_JWKS_URL
+        default: http://keycloak:8080/realms/vistay-customer/protocol/openid-connect/certs
+      polling_interval: 15m
+      prefetch: false
+      refresh_on_unknown_kid: 30s
+  audiences:
+    from_env: CUSTOMER_JWT_AUDIENCES
+    default:
+      - vistay-customer-api
+  issuers:
+    from_env: CUSTOMER_JWT_ISSUERS
+    default:
+      - http://identity.localhost/realms/vistay-customer
+  allowed_algorithms: [RS256]
+headers:
+  all:
+    request:
+      - propagate: { named: Authorization }
+      - propagate: { named: X-Request-ID }
+cors:
+  enabled: true
+  allow_credentials: false
+  methods: [GET, POST, OPTIONS]
+  allow_headers: [Authorization, Content-Type, X-CSRF-Token, X-Request-ID]
+  policies:
+    - origins:
+        from_env: CUSTOMER_CORS_ALLOWED_ORIGINS
+        default: [http://customer.localhost]
+csrf:
+  enabled: true
+  required_headers: [X-CSRF-Token]
+introspection: false
+subscriptions: { enabled: false }
+error_masking: { enabled: true }
+log: { level: info, format: json }

@@ -34,7 +34,7 @@ server {
         sub_filter 'http://identity.localhost' 'http://$host';
         sub_filter_once off;
     }
-    location ~ ^/(realms/vistay-backoffice/|resources/) {
+    location ~ ^/(realms/vistay-(?:backoffice|customer)/|resources/) {
         set $keycloak_upstream http://keycloak:8080;
         proxy_pass $keycloak_upstream;
         include /etc/nginx/proxy_params;
@@ -138,7 +138,7 @@ server {
         proxy_pass $keycloak_upstream;
         include /etc/nginx/proxy_params;
     }
-    location ~ ^/(realms/vistay-backoffice/|resources/) {
+    location ~ ^/(realms/vistay-(?:backoffice|customer)/|resources/) {
         set $keycloak_upstream http://keycloak:8080;
         proxy_pass $keycloak_upstream;
         include /etc/nginx/proxy_params;
@@ -185,6 +185,38 @@ server {
 
 server {
     listen 8080;
+    server_name ${CUSTOMER_GRAPHQL_HOST};
+    access_log /dev/stdout vistay;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    server_tokens off;
+
+    location = /_edge/ready {
+        set $router_upstream http://router-customer:4000;
+        proxy_pass $router_upstream/readiness;
+        include /etc/nginx/proxy_params;
+    }
+    location ~ ^/graphql(?:/|$) {
+        set $router_upstream http://router-customer:4000;
+        proxy_pass $router_upstream;
+        proxy_intercept_errors on;
+        error_page 401 = @customer_graphql_unauthenticated;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location @customer_graphql_unauthenticated {
+        internal;
+        default_type application/json;
+        return 401 '{"errors":[{"message":"Authentication is required.","extensions":{"code":"UNAUTHENTICATED"}}]}';
+    }
+    location / { return 404; }
+}
+
+server {
+    listen 8080;
     server_name ${HOST_WEB_HOST};
     access_log /dev/stdout vistay;
     add_header X-Content-Type-Options nosniff always;
@@ -194,6 +226,20 @@ server {
     location / {
         set $frontend_host_upstream http://frontend-host:8080;
         proxy_pass $frontend_host_upstream;
+        include /etc/nginx/proxy_params;
+    }
+}
+
+server {
+    listen 8080;
+    server_name ${CUSTOMER_WEB_HOST};
+    access_log /dev/stdout vistay;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    server_tokens off;
+    location / {
+        set $frontend_customer_upstream http://frontend-customer:8080;
+        proxy_pass $frontend_customer_upstream;
         include /etc/nginx/proxy_params;
     }
 }

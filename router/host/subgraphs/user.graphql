@@ -3,12 +3,30 @@ extend schema
 
 type Query {
   myProfile: PersonalProfile! @authenticated
+  myProfileLinkStatus: ProfileAccountLink! @authenticated
 }
 
 
 type Mutation {
   updateMyProfile(input: UpdateMyProfileInput!): PersonalProfile! @authenticated
+  requestMyProfileLink(input: RequestProfileLinkInput!): ProfileAccountLink! @authenticated
+  verifyMyProfileLink(input: VerifyProfileLinkInput!): ProfileAccountLink! @authenticated
 }
+
+type ProfileAccountLink {
+  linkId: ID
+  challengeId: ID
+  profileType: AccountType!
+  status: String!
+  maskedRecipient: String
+  expiresAt: String
+  requiresApproval: Boolean!
+  replayed: Boolean!
+}
+
+enum AccountType { CUSTOMER ADMIN HOST }
+input RequestProfileLinkInput { displayName: String!, cccd: String! }
+input VerifyProfileLinkInput { challengeId: ID!, code: String! }
 
 type PersonalProfile {
   accountId: ID!

@@ -25,6 +25,7 @@ $grpcBookingServerOutput = Join-Path $generatedRoot 'grpc\booking-server'
 $grpcPropertyServerOutput = Join-Path $generatedRoot 'grpc\property-server'
 $grpcClientOutput = Join-Path $generatedRoot 'grpc\authentication-client'
 $grpcBookingClientOutput = Join-Path $generatedRoot 'grpc\booking-client'
+$grpcPropertyClientOutput = Join-Path $generatedRoot 'grpc\property-client'
 $grpcFinanceClientOutput = Join-Path $generatedRoot 'grpc\finance-client'
 $grpcPaymentClientOutput = Join-Path $generatedRoot 'grpc\payment-client'
 $grpcNotificationClientOutput = Join-Path $generatedRoot 'grpc\notification-client'
@@ -39,6 +40,7 @@ foreach ($directory in @(
     $grpcPropertyServerOutput,
     $grpcClientOutput,
     $grpcBookingClientOutput,
+    $grpcPropertyClientOutput,
     $grpcFinanceClientOutput,
     $grpcPaymentClientOutput,
     $grpcNotificationClientOutput,
@@ -178,6 +180,10 @@ ssl.endpoint.identification.algorithm=https
     $grpcBookingRequest = Join-Path $workDirectory 'booking.csr'
     $grpcBookingCertificate = Join-Path $grpcBookingClientOutput 'booking.crt'
     $grpcBookingExtensions = Join-Path $workDirectory 'booking.ext'
+    $grpcPropertyKey = Join-Path $grpcPropertyClientOutput 'property.key'
+    $grpcPropertyRequest = Join-Path $workDirectory 'property.csr'
+    $grpcPropertyCertificate = Join-Path $grpcPropertyClientOutput 'property.crt'
+    $grpcPropertyExtensions = Join-Path $workDirectory 'property.ext'
     $grpcFinanceKey = Join-Path $grpcFinanceClientOutput 'finance.key'
     $grpcFinanceRequest = Join-Path $workDirectory 'finance.csr'
     $grpcFinanceCertificate = Join-Path $grpcFinanceClientOutput 'finance.crt'
@@ -225,6 +231,13 @@ keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=clientAuth
 subjectAltName=URI:spiffe://vistay/service/booking
 '@ | Set-Content -LiteralPath $grpcBookingExtensions -NoNewline
+
+    @'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth
+subjectAltName=URI:spiffe://vistay/service/property
+'@ | Set-Content -LiteralPath $grpcPropertyExtensions -NoNewline
 
     @'
 basicConstraints=critical,CA:FALSE
@@ -308,6 +321,17 @@ subjectAltName=URI:spiffe://vistay/service/notification
     )
     Invoke-OpenSsl @(
         'req', '-new', '-newkey', 'rsa:3072', '-sha256', '-nodes',
+        '-keyout', $grpcPropertyKey, '-out', $grpcPropertyRequest,
+        '-subj', '/C=VN/L=Ho Chi Minh City/O=ViStay/OU=Platform/CN=service-property'
+    )
+    Invoke-OpenSsl @(
+        'x509', '-req', '-sha256', '-in', $grpcPropertyRequest,
+        '-CA', $grpcCaCertificate, '-CAkey', $grpcCaKey, '-CAserial', $grpcCaSerial,
+        '-out', $grpcPropertyCertificate, '-days', '825',
+        '-extfile', $grpcPropertyExtensions
+    )
+    Invoke-OpenSsl @(
+        'req', '-new', '-newkey', 'rsa:3072', '-sha256', '-nodes',
         '-keyout', $grpcFinanceKey, '-out', $grpcFinanceRequest,
         '-subj', '/C=VN/L=Ho Chi Minh City/O=ViStay/OU=Platform/CN=service-finance'
     )
@@ -341,7 +365,7 @@ subjectAltName=URI:spiffe://vistay/service/notification
         '-extfile', $grpcNotificationExtensions
     )
 
-    foreach ($destination in @($grpcServerOutput, $grpcBookingServerOutput, $grpcPropertyServerOutput, $grpcClientOutput, $grpcBookingClientOutput, $grpcFinanceClientOutput, $grpcPaymentClientOutput, $grpcNotificationClientOutput)) {
+    foreach ($destination in @($grpcServerOutput, $grpcBookingServerOutput, $grpcPropertyServerOutput, $grpcClientOutput, $grpcBookingClientOutput, $grpcPropertyClientOutput, $grpcFinanceClientOutput, $grpcPaymentClientOutput, $grpcNotificationClientOutput)) {
         Copy-Item -LiteralPath $grpcCaCertificate -Destination (Join-Path $destination 'ca.crt')
     }
 
@@ -362,6 +386,9 @@ subjectAltName=URI:spiffe://vistay/service/notification
             (Join-Path $grpcBookingClientOutput 'ca.crt') `
             $grpcBookingCertificate `
             $grpcBookingKey `
+            (Join-Path $grpcPropertyClientOutput 'ca.crt') `
+            $grpcPropertyCertificate `
+            $grpcPropertyKey `
             (Join-Path $grpcFinanceClientOutput 'ca.crt') `
             $grpcFinanceCertificate `
             $grpcFinanceKey `

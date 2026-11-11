@@ -45,7 +45,12 @@ create_topic() {
 create_topic vistay.auth.account-provisioned.v1
 create_topic vistay.user.profile-provisioned.v1
 create_topic vistay.user.authorization-changed.v1
+create_topic vistay.user.profile-link-requested.v1
+create_topic vistay.user.profile-link-challenge-issued.v1
+create_topic vistay.user.profile-link-challenge-delivered.v1
+create_topic vistay.user.profile-linked.v1
 create_topic vistay.notification.notification-created.v1
+create_topic vistay.notification.notification-read.v1
 create_topic vistay.payment.intent-created.v1
 create_topic vistay.payment.qr-ready.v1
 create_topic vistay.payment.intent-expired.v1
@@ -92,6 +97,14 @@ grant_producer vistay-authentication vistay.auth.account-provisioned.v1
 grant_consumer vistay-user vistay.auth.account-provisioned.v1 vistay-user
 grant_producer vistay-user vistay.user.profile-provisioned.v1
 grant_producer vistay-user vistay.user.authorization-changed.v1
+grant_producer vistay-user vistay.user.profile-link-requested.v1
+grant_producer vistay-user vistay.user.profile-link-challenge-issued.v1
+grant_producer vistay-user vistay.user.profile-linked.v1
+grant_consumer vistay-authentication vistay.user.profile-link-requested.v1 vistay-authentication-service-profile-link-lifecycle-v1
+grant_consumer vistay-authentication vistay.user.profile-linked.v1 vistay-authentication-service-profile-link-lifecycle-v1
+grant_consumer vistay-notification vistay.user.profile-link-challenge-issued.v1 vistay-notification-profile-link-email-v1
+grant_producer vistay-notification vistay.user.profile-link-challenge-delivered.v1
+grant_consumer vistay-user vistay.user.profile-link-challenge-delivered.v1 vistay-user-profile-link-delivery-v1
 grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-authorization-cache
 grant_consumer vistay-authentication vistay.user.authorization-changed.v1 vistay-authentication-service-keycloak-role-projection
 grant_consumer vistay-booking vistay.user.authorization-changed.v1 vistay-booking-service-authorization-cache
@@ -100,6 +113,7 @@ grant_consumer vistay-payment vistay.user.authorization-changed.v1 vistay-paymen
 grant_consumer vistay-notification vistay.user.authorization-changed.v1 vistay-notification-service-authorization-cache
 grant_consumer vistay-notification vistay.user.profile-provisioned.v1 vistay-notification
 grant_producer vistay-notification vistay.notification.notification-created.v1
+grant_producer vistay-notification vistay.notification.notification-read.v1
 grant_producer vistay-payment vistay.payment.intent-created.v1
 grant_producer vistay-payment vistay.payment.qr-ready.v1
 grant_producer vistay-payment vistay.payment.intent-expired.v1

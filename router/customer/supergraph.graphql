@@ -1,0 +1,118 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.4", for: EXECUTION)
+  @link(url: "https://specs.apollo.dev/authenticated/v0.1", for: SECURITY)
+{
+  query: Query
+  mutation: Mutation
+}
+
+directive @authenticated on FIELD_DEFINITION | OBJECT | INTERFACE | SCALAR | ENUM
+
+directive @join__directive(graphs: [join__Graph!], name: String!, args: join__DirectiveArguments) repeatable on SCHEMA | OBJECT | INTERFACE | FIELD_DEFINITION
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean, overrideLabel: String) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+enum AccountType
+  @join__type(graph: USER)
+{
+  CUSTOMER @join__enumValue(graph: USER)
+  ADMIN @join__enumValue(graph: USER)
+  HOST @join__enumValue(graph: USER)
+}
+
+scalar join__DirectiveArguments
+
+scalar join__FieldSet
+
+enum join__Graph {
+  USER @join__graph(name: "user", url: "http://service-user:8080/graphql")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type LoyaltyProfile
+  @join__type(graph: USER)
+{
+  status: String!
+  qualifyingPoints: String!
+  currentTier: LoyaltyTier
+  nextTier: LoyaltyTier
+  pointsToNextTier: String
+  policyVersion: Int
+  asOf: String!
+}
+
+type LoyaltyTier
+  @join__type(graph: USER)
+{
+  code: String!
+  displayName: String!
+  minimumPoints: String!
+  displayOrder: Int!
+}
+
+type Mutation
+  @join__type(graph: USER)
+{
+  requestMyProfileLink(input: RequestProfileLinkInput!): ProfileAccountLink! @authenticated
+  verifyMyProfileLink(input: VerifyProfileLinkInput!): ProfileAccountLink! @authenticated
+}
+
+type ProfileAccountLink
+  @join__type(graph: USER)
+{
+  linkId: ID
+  challengeId: ID
+  profileType: AccountType!
+  status: String!
+  maskedRecipient: String
+  expiresAt: String
+  requiresApproval: Boolean!
+  replayed: Boolean!
+}
+
+type Query
+  @join__type(graph: USER)
+{
+  myProfileLinkStatus: ProfileAccountLink! @authenticated
+  myLoyaltyProfile: LoyaltyProfile! @authenticated
+}
+
+input RequestProfileLinkInput
+  @join__type(graph: USER)
+{
+  displayName: String!
+  cccd: String!
+}
+
+input VerifyProfileLinkInput
+  @join__type(graph: USER)
+{
+  challengeId: ID!
+  code: String!
+}
