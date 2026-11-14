@@ -50,6 +50,8 @@ create_topic vistay.user.profile-link-challenge-issued.v1
 create_topic vistay.user.profile-link-challenge-delivered.v1
 create_topic vistay.user.profile-linked.v1
 create_topic vistay.user.identity-policy-changed.v1
+create_topic vistay.host.identity-activated.v1
+create_topic vistay.host.lifecycle-changed.v1
 create_topic vistay.notification.notification-created.v1
 create_topic vistay.notification.notification-read.v1
 create_topic vistay.payment.intent-created.v1
@@ -95,7 +97,11 @@ grant_consumer() {
 }
 
 grant_producer vistay-authentication vistay.auth.account-provisioned.v1
+grant_producer vistay-authentication vistay.host.identity-activated.v1
+grant_producer vistay-authentication vistay.host.lifecycle-changed.v1
 grant_consumer vistay-user vistay.auth.account-provisioned.v1 vistay-user
+grant_consumer vistay-user vistay.host.identity-activated.v1 vistay-user
+grant_consumer vistay-user vistay.host.lifecycle-changed.v1 vistay-user
 grant_producer vistay-user vistay.user.profile-provisioned.v1
 grant_producer vistay-user vistay.user.authorization-changed.v1
 grant_producer vistay-user vistay.user.profile-link-requested.v1
