@@ -1,0 +1,39 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.7", import: ["@authenticated"])
+
+type Query {
+  myProfileLinkStatus: ProfileAccountLink! @authenticated
+  myLoyaltyProfile: LoyaltyProfile! @authenticated
+}
+
+type Mutation {
+  requestMyProfileLink(input: RequestProfileLinkInput!): ProfileAccountLink! @authenticated
+  verifyMyProfileLink(input: VerifyProfileLinkInput!): ProfileAccountLink! @authenticated
+}
+
+enum AccountType { CUSTOMER ADMIN HOST }
+
+type ProfileAccountLink {
+  linkId: ID
+  challengeId: ID
+  profileType: AccountType!
+  status: String!
+  maskedRecipient: String
+  expiresAt: String
+  requiresApproval: Boolean!
+  replayed: Boolean!
+}
+
+type LoyaltyTier { code: String!, displayName: String!, minimumPoints: String!, displayOrder: Int! }
+type LoyaltyProfile {
+  status: String!
+  qualifyingPoints: String!
+  currentTier: LoyaltyTier
+  nextTier: LoyaltyTier
+  pointsToNextTier: String
+  policyVersion: Int
+  asOf: String!
+}
+
+input RequestProfileLinkInput { displayName: String!, cccd: String! }
+input VerifyProfileLinkInput { challengeId: ID!, code: String! }

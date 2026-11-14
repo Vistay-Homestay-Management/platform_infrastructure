@@ -12,6 +12,10 @@ subgraphs:
     routing_url: http://service-property:8080/graphql
     schema:
       file: subgraphs/property.graphql
+  finance:
+    routing_url: http://service-finance:8080/graphql
+    schema:
+      file: subgraphs/finance.graphql
   notification:
     routing_url: http://service-notification:8080/graphql
     schema:

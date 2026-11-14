@@ -161,12 +161,14 @@ jobs:
             --header 'Host: identity.localhost' \
             'http://127.0.0.1:18080/realms/vistay-backoffice/.well-known/openid-configuration'
 
-          for realm in vistay-host vistay-customer; do
-            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-              --header 'Host: identity.localhost' \
-              "http://127.0.0.1:18080/realms/${realm}/.well-known/openid-configuration")"
-            test "$status" = '404'
-          done
+          curl --fail --silent --show-error --head \
+            --header 'Host: identity.localhost' \
+            'http://127.0.0.1:18080/realms/vistay-customer/.well-known/openid-configuration'
+
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header 'Host: identity.localhost' \
+            'http://127.0.0.1:18080/realms/vistay-host/.well-known/openid-configuration')"
+          test "$status" = '404'
 
           status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
             --header 'Host: identity.localhost' \

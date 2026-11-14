@@ -105,9 +105,10 @@ function Assert-BackofficeClient {
 function Assert-HostRealmCompatibility {
     param([pscustomobject]$Realm)
 
-    Assert-Contract ($Realm.realm -eq 'vistay-host') 'The deferred Host realm must target vistay-host.'
-    Assert-Contract ($Realm.enabled -eq $false) 'The Host realm must remain disabled until its edge/JWT/smoke gate passes.'
-    Assert-Contract ($Realm.registrationAllowed -eq $false) 'The Host realm must not allow self-registration.'
+    Assert-Contract ($Realm.realm -eq 'vistay-host') 'The Host realm contract must target vistay-host.'
+    Assert-Contract ($Realm.enabled -eq $true) 'The Host realm must be enabled for governed profile-linking registration.'
+    Assert-Contract ($Realm.registrationAllowed -eq $true) 'The Host realm must allow account registration before governed profile linking.'
+    Assert-Contract ($Realm.registrationEmailAsUsername -eq $true) 'The Host realm must use verified email as the registration username.'
     Assert-Contract ($Realm.verifyEmail -eq $true) 'The Host realm must require email verification.'
     Assert-Contract ($Realm.duplicateEmailsAllowed -eq $false) 'The Host realm must reject duplicate emails.'
     Assert-Contract ($Realm.revokeRefreshToken -eq $true) 'The Host realm must rotate refresh tokens.'
@@ -152,23 +153,25 @@ $exampleEnvPath = Join-Path $repositoryRoot $EnvFile
 Assert-Contract ((Get-EnvFileValue -Path $exampleEnvPath -Name 'VISTAY_BACKOFFICE_SMTP_HOST') -eq 'mailpit') 'Local Backoffice email must use the Mailpit SMTP sink.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-EnvFileValue -Path $exampleEnvPath -Name 'VISTAY_BACKOFFICE_SMTP_FROM'))) 'Local Backoffice email must define a sender address.'
 
-foreach ($deferredRealmFile in @(
+foreach ($profileRealmFile in @(
     'keycloak/realms/vistay-host-realm.json',
     'keycloak/realms/vistay-customer-realm.json'
 )) {
-    $deferredRealm = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot $deferredRealmFile) |
+    $profileRealm = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot $profileRealmFile) |
         ConvertFrom-Json
-    Assert-Contract ($deferredRealm.enabled -eq $false) `
-        "$($deferredRealm.realm) must remain disabled until its release is activated."
-    Assert-Contract ($deferredRealm.registrationAllowed -eq $false) `
-        "$($deferredRealm.realm) must not accept registration during Epic 01."
-    if ($deferredRealm.realm -eq 'vistay-customer') {
-        Assert-Contract ($deferredRealm.smtpServer.host -eq '${VISTAY_CUSTOMER_SMTP_HOST}') 'Customer SMTP host must be environment-backed.'
-        Assert-Contract ($deferredRealm.smtpServer.from -eq '${VISTAY_CUSTOMER_SMTP_FROM}') 'Customer SMTP sender must be environment-backed.'
-        Assert-Contract ($deferredRealm.smtpServer.password -eq '${VISTAY_CUSTOMER_SMTP_PASSWORD}') 'Customer SMTP password must remain an unresolved secret reference.'
+    Assert-Contract ($profileRealm.enabled -eq $true) `
+        "$($profileRealm.realm) must be enabled for account registration and governed profile linking."
+    Assert-Contract ($profileRealm.registrationAllowed -eq $true) `
+        "$($profileRealm.realm) must accept account registration before a profile is linked."
+    Assert-Contract ($profileRealm.registrationEmailAsUsername -eq $true) `
+        "$($profileRealm.realm) must use verified email as the registration username."
+    if ($profileRealm.realm -eq 'vistay-customer') {
+        Assert-Contract ($profileRealm.smtpServer.host -eq '${VISTAY_CUSTOMER_SMTP_HOST}') 'Customer SMTP host must be environment-backed.'
+        Assert-Contract ($profileRealm.smtpServer.from -eq '${VISTAY_CUSTOMER_SMTP_FROM}') 'Customer SMTP sender must be environment-backed.'
+        Assert-Contract ($profileRealm.smtpServer.password -eq '${VISTAY_CUSTOMER_SMTP_PASSWORD}') 'Customer SMTP password must remain an unresolved secret reference.'
     }
-    if ($deferredRealm.realm -eq 'vistay-host') {
-        Assert-HostRealmCompatibility -Realm $deferredRealm
+    if ($profileRealm.realm -eq 'vistay-host') {
+        Assert-HostRealmCompatibility -Realm $profileRealm
     }
 }
 

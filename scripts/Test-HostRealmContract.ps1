@@ -54,9 +54,10 @@ $envValues = Read-EnvFile -Path $envPath
 $realmFingerprint = (Get-FileHash -LiteralPath $realmPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 Assert-Contract ($realm.realm -eq 'vistay-host') 'The Host realm contract must target vistay-host.'
-Assert-Contract ($realm.enabled -eq $false) 'The checked-in Host realm must remain disabled until the edge/JWT/smoke gate passes.'
+Assert-Contract ($realm.enabled -eq $true) 'The imported Host realm must be enabled for the governed profile-linking registration flow.'
 Assert-Contract ($envValues.VISTAY_HOST_REALM_ENABLED -eq 'false') 'The baseline Host realm enablement signal must be false.'
-Assert-Contract ($realm.registrationAllowed -eq $false) 'Host self-registration must remain disabled.'
+Assert-Contract ($realm.registrationAllowed -eq $true) 'Host self-registration must be available behind the disabled-by-default edge gate.'
+Assert-Contract ($realm.registrationEmailAsUsername -eq $true) 'Host self-registration must use the verified email as the immutable username.'
 Assert-Contract ($realm.sslRequired -eq 'external') 'Host realm transport must require external TLS.'
 Assert-Contract ($realm.verifyEmail -eq $true) 'Host activation must require verified email.'
 Assert-Contract ($realm.loginWithEmailAllowed -eq $true) 'Host login must permit the verified email identifier.'
@@ -168,8 +169,8 @@ $report = [ordered]@{
     mailCapture = 'MAILPIT_INTERNAL_ONLY'
     acceptanceCriteria = [ordered]@{
         AC01 = 'PKCE, verify-email, password setup, bounded sessions, recovery and local mail capture are validated.'
-        AC02 = 'Wildcard redirects, implicit/direct grants, missing PKCE, unbound SMTP values and premature enablement fail closed.'
-        AC03 = 'Realm/client/action configuration is deterministic and the disabled baseline is rollback-safe.'
+        AC02 = 'Wildcard redirects, implicit/direct grants, missing PKCE, unbound SMTP values and unreviewed edge exposure fail closed.'
+        AC03 = 'Realm/client/action configuration is deterministic and the disabled edge baseline remains rollback-safe.'
     }
 }
 Write-Host ('Host realm contract report: ' + ($report | ConvertTo-Json -Compress))

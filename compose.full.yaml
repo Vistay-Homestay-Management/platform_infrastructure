@@ -3,9 +3,9 @@ x-service-environment: &service-environment
   KEYCLOAK_BACKOFFICE_ISSUER: ${BACKOFFICE_JWT_ISSUERS}
   KEYCLOAK_BACKOFFICE_JWKS_URI: ${BACKOFFICE_JWKS_URL}
   KEYCLOAK_BACKOFFICE_AUDIENCE: ${BACKOFFICE_JWT_AUDIENCES}
-  KEYCLOAK_HOST_ISSUER: ${HOST_JWT_ISSUERS}
-  KEYCLOAK_HOST_JWKS_URI: ${HOST_JWKS_URL}
-  KEYCLOAK_HOST_AUDIENCE: ${HOST_JWT_AUDIENCES}
+  KEYCLOAK_HOST_ISSUER: ${HOST_JWT_ISSUERS:-http://identity.localhost/realms/vistay-host}
+  KEYCLOAK_HOST_JWKS_URI: ${HOST_JWKS_URL:-http://keycloak:8080/realms/vistay-host/protocol/openid-connect/certs}
+  KEYCLOAK_HOST_AUDIENCE: ${HOST_JWT_AUDIENCES:-vistay-host-api}
   # Compatibility for bounded contexts that have not yet adopted the explicit
   # public-issuer/internal-JWKS variable names.
   OIDC_ISSUER_URI: ${BACKOFFICE_JWT_ISSUERS}
@@ -29,6 +29,8 @@ x-service-dependencies: &service-dependencies
     condition: service_completed_successfully
   keycloak:
     condition: service_healthy
+  keycloak-profile-link-init:
+    condition: service_completed_successfully
   otel-collector:
     condition: service_healthy
 
@@ -125,8 +127,21 @@ services:
       GRPC_SERVER_CERT: file:/run/secrets/grpc/server.crt
       GRPC_SERVER_KEY: file:/run/secrets/grpc/server.key
       GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/ca.crt
-      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/authentication,spiffe://vistay/service/booking,spiffe://vistay/service/finance,spiffe://vistay/service/payment,spiffe://vistay/service/notification
+      GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/authentication,spiffe://vistay/service/booking,spiffe://vistay/service/property,spiffe://vistay/service/finance,spiffe://vistay/service/payment,spiffe://vistay/service/notification
       GRPC_MAXIMUM_DEADLINE: 2s
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_USER_SERVICE_TOKEN:-local-vistay-user-service-token}
+      VAULT_TRANSIT_MOUNT: transit
+      VAULT_PROFILE_DOCUMENT_KEY: vistay-profile-document
+      VAULT_PROFILE_LOOKUP_KEY: vistay-profile-lookup
+      VAULT_PROFILE_LINK_OTP_KEY: vistay-profile-link-otp
+      VAULT_PROFILE_LINK_DELIVERY_KEY: vistay-profile-link-delivery
+      KEYCLOAK_CUSTOMER_ISSUER: ${CUSTOMER_JWT_ISSUER:-http://identity.localhost/realms/vistay-customer}
+      KEYCLOAK_CUSTOMER_JWKS_URI: http://keycloak:8080/realms/vistay-customer/protocol/openid-connect/certs
+      KEYCLOAK_CUSTOMER_AUDIENCE: vistay-customer-api
+      KEYCLOAK_HOST_ISSUER: ${HOST_JWT_ISSUER:-http://identity.localhost/realms/vistay-host}
+      KEYCLOAK_HOST_JWKS_URI: http://keycloak:8080/realms/vistay-host/protocol/openid-connect/certs
+      KEYCLOAK_HOST_AUDIENCE: vistay-host-api
     expose: ["8080", "9090"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
@@ -136,6 +151,8 @@ services:
       <<: *service-dependencies
       redis:
         condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
     networks: [vistay]
 
   notification:
@@ -156,6 +173,16 @@ services:
       GRPC_CLIENT_CERT: file:/run/secrets/grpc/notification.crt
       GRPC_CLIENT_KEY: file:/run/secrets/grpc/notification.key
       GRPC_SERVER_CA_CERT: file:/run/secrets/grpc/ca.crt
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_AUTH: "false"
+      SMTP_STARTTLS: "false"
+      PROFILE_LINK_EMAIL_ENABLED: "true"
+      PROFILE_LINK_EMAIL_FROM: ${PROFILE_LINK_EMAIL_FROM:-no-reply@vistay.localhost}
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_NOTIFICATION_SERVICE_TOKEN:-local-vistay-notification-service-token}
+      VAULT_TRANSIT_MOUNT: transit
+      VAULT_PROFILE_LINK_DELIVERY_KEY: vistay-profile-link-delivery
     expose: ["8080"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
@@ -165,6 +192,10 @@ services:
       <<: *service-dependencies
       user:
         condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     networks: [vistay]
 
   property:
@@ -174,6 +205,8 @@ services:
     environment:
       <<: *service-environment
       DB_NAME: vistay_property_db
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="vistay-property" password="${KAFKA_PROPERTY_PASSWORD}";
@@ -183,14 +216,23 @@ services:
       PROPERTY_GRPC_SERVER_CERT: file:/run/secrets/grpc/server.crt
       PROPERTY_GRPC_SERVER_KEY: file:/run/secrets/grpc/server.key
       PROPERTY_GRPC_CLIENT_CA_CERT: file:/run/secrets/grpc/ca.crt
+      USER_GRPC_ADDRESS: static://user:9090
+      USER_GRPC_SSL_BUNDLE: grpc-user-client
+      GRPC_CLIENT_CERT: file:/run/secrets/grpc-client/property.crt
+      GRPC_CLIENT_KEY: file:/run/secrets/grpc-client/property.key
+      GRPC_SERVER_CA_CERT: file:/run/secrets/grpc-client/ca.crt
       GRPC_ALLOWED_CALLER_URIS: spiffe://vistay/service/booking,spiffe://vistay/service/finance
       GRPC_MAXIMUM_DEADLINE: 2s
     expose: ["8080", "9090"]
     volumes:
       - ./certs/generated/kafka/client:/run/secrets/kafka:ro
       - ./certs/generated/grpc/property-server:/run/secrets/grpc:ro
+      - ./certs/generated/grpc/property-client:/run/secrets/grpc-client:ro
     healthcheck: *spring-service-healthcheck
-    depends_on: *service-dependencies
+    depends_on:
+      <<: *service-dependencies
+      user:
+        condition: service_healthy
     networks: [vistay]
 
   booking:
