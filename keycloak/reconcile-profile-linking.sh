@@ -36,6 +36,11 @@ ensure_facade() {
 ensure_facade vistay-customer
 ensure_facade vistay-host
 
+# Backoffice identities are employee records. They are provisioned by an
+# authorized administrator or through a one-time invitation, never by public signup.
+"$kcadm" update "realms/vistay-backoffice" \
+  -s registrationAllowed=false -s verifyEmail=true >/dev/null
+
 # The backoffice roles scope has a dedicated vistay-backoffice-api role mapper.
 # Keeping Keycloak's generic audience-resolve mapper would also add the
 # unrelated `account` audience and make strict edge validation reject the JWT.

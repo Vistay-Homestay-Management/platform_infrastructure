@@ -3,7 +3,7 @@
   "displayName": "ViStay Backoffice",
   "enabled": true,
   "sslRequired": "external",
-  "registrationAllowed": true,
+  "registrationAllowed": false,
   "registrationEmailAsUsername": true,
   "rememberMe": false,
   "verifyEmail": true,
