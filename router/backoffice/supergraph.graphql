@@ -346,6 +346,44 @@ input CancelPaymentIntentInput
   reason: String!
 }
 
+input CreateAdminProfileInput
+  @join__type(graph: USER)
+{
+  fullName: String!
+  email: String
+  contactPhone: String
+  employeeCode: String
+  subtype: String! = "STAFF"
+  hiredOn: String
+  reason: String!
+  idempotencyKey: String!
+}
+
+input CreateCustomerProfileInput
+  @join__type(graph: USER)
+{
+  fullName: String!
+  email: String
+  contactPhone: String
+  dateOfBirth: String
+  address: String
+  reason: String!
+  idempotencyKey: String!
+}
+
+input CreateHostProfileInput
+  @join__type(graph: USER)
+{
+  fullName: String!
+  email: String
+  contactPhone: String
+  hostCode: String
+  address: String
+  taxCode: String
+  reason: String!
+  idempotencyKey: String!
+}
+
 input CreateInventoryBlockInput
   @join__type(graph: BOOKING)
 {
@@ -462,6 +500,22 @@ type FinanceDashboardSummary
   totalSettlementCount: Int!
   approvedSettlementCount: Int!
   paidSettlementCount: Int!
+}
+
+type IdentityPolicy
+  @join__type(graph: USER)
+{
+  accountType: AccountType!
+  policyVersion: Int!
+  registrationEnabled: Boolean!
+  linkMode: String!
+  linkDeadlineSeconds: Int!
+  otpTtlSeconds: Int!
+  maxOtpAttempts: Int!
+  disableGracePeriodSeconds: Int!
+  purgeAfterSeconds: Int!
+  active: Boolean!
+  updatedAt: String!
 }
 
 type InventoryAvailabilityOverlap
@@ -785,6 +839,10 @@ type Mutation
   verifyMyProfileLink(input: VerifyProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
   approveProfileLink(input: ApproveProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
   rejectProfileLink(input: RejectProfileLinkInput!): ProfileAccountLink! @join__field(graph: USER) @authenticated
+  createCustomerProfile(input: CreateCustomerProfileInput!): UserProfileDetails! @join__field(graph: USER) @authenticated
+  createAdminProfile(input: CreateAdminProfileInput!): UserProfileDetails! @join__field(graph: USER) @authenticated
+  createHostProfile(input: CreateHostProfileInput!): UserProfileDetails! @join__field(graph: USER) @authenticated
+  updateIdentityPolicy(input: UpdateIdentityPolicyInput!): IdentityPolicy! @join__field(graph: USER) @authenticated
 }
 
 type Notification
@@ -1841,6 +1899,8 @@ type Query
   myProfileLinkStatus: ProfileAccountLink! @join__field(graph: USER) @authenticated
   profileLinkRequests(profileType: AccountType, status: String = "APPROVAL_PENDING", first: Int = 50): [ProfileLinkReview!]! @join__field(graph: USER) @authenticated
   userDirectory(accountType: AccountType!, search: String, first: Int = 25, after: String): UserDirectoryPage! @join__field(graph: USER) @authenticated
+  userProfile(accountType: AccountType!, profileId: ID!): UserProfileDetails! @join__field(graph: USER) @authenticated
+  identityPolicies: [IdentityPolicy!]! @join__field(graph: USER) @authenticated
   authorizationCatalog(accountType: AccountType!): [AuthorizationRole!]! @join__field(graph: USER) @authenticated
   authorizationSubject(subjectId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
   authorizationSubjectByAccount(accountType: AccountType!, accountId: ID!): AuthorizationSubject! @join__field(graph: USER) @authenticated
@@ -2074,6 +2134,17 @@ type UnreadNotificationCount
   inboxRevision: Int!
 }
 
+input UpdateIdentityPolicyInput
+  @join__type(graph: USER)
+{
+  accountType: AccountType!
+  registrationEnabled: Boolean!
+  linkMode: String!
+  expectedPolicyVersion: Int!
+  reason: String!
+  idempotencyKey: String!
+}
+
 input UpdateMyProfileInput
   @join__type(graph: USER)
 {
@@ -2116,6 +2187,27 @@ type UserDirectoryPage
   nodes: [UserDirectoryEntry!]!
   totalCount: Int!
   nextCursor: String
+}
+
+type UserProfileDetails
+  @join__type(graph: USER)
+{
+  profileId: ID!
+  accountId: ID
+  accountType: AccountType!
+  displayName: String!
+  email: String
+  contactPhone: String
+  status: String!
+  referenceCode: String
+  subtype: String
+  verificationStatus: String
+  relevantDate: String
+  address: String
+  taxCode: String
+  version: Int!
+  createdAt: String!
+  updatedAt: String!
 }
 
 input VerifyProfileLinkInput
