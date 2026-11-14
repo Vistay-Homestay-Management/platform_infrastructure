@@ -81,6 +81,11 @@ server {
         proxy_pass $authentication_upstream;
         include /etc/nginx/proxy_params;
     }
+    location = /api/v1/backoffice/invitations {
+        set $authentication_upstream http://authentication:8080;
+        proxy_pass $authentication_upstream;
+        include /etc/nginx/proxy_params;
+    }
     location ~ ^/api/v1/backoffice/accounts/[0-9a-fA-F-]+(?:/(?:sessions(?:/[^/]+)?|security-events|lifecycle))?$ {
         set $authentication_upstream http://authentication:8080;
         proxy_pass $authentication_upstream;
@@ -254,6 +259,11 @@ server {
         proxy_pass $authentication_upstream;
         include /etc/nginx/proxy_params;
     }
+    location = /api/v1/backoffice/invitations {
+        set $authentication_upstream http://authentication:8080;
+        proxy_pass $authentication_upstream;
+        include /etc/nginx/proxy_params;
+    }
     location ~ ^/api/v1/backoffice/accounts/[0-9a-fA-F-]+(?:/(?:sessions(?:/[^/]+)?|security-events|lifecycle))?$ {
         set $authentication_upstream http://authentication:8080;
         proxy_pass $authentication_upstream;
@@ -282,6 +292,11 @@ server {
         include /etc/nginx/proxy_params;
     }
     location = /api/v1/backoffice/accounts {
+        set $authentication_upstream http://authentication:8080;
+        proxy_pass $authentication_upstream;
+        include /etc/nginx/proxy_params;
+    }
+    location = /api/v1/backoffice/invitations {
         set $authentication_upstream http://authentication:8080;
         proxy_pass $authentication_upstream;
         include /etc/nginx/proxy_params;
