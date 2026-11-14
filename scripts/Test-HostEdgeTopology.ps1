@@ -114,7 +114,7 @@ foreach ($expectedTarget in @(
     'router-host:4000',
     'frontend-host:8080',
     '^/realms/vistay-host/',
-    '^/(realms/vistay-backoffice/|resources/)',
+    '^/(realms/vistay-(?:backoffice|customer)/|resources/)',
     'set $host_realm_enabled ${VISTAY_HOST_REALM_ENABLED};',
     'X-Request-ID $request_id',
     'X-Content-Type-Options nosniff',
@@ -175,8 +175,8 @@ foreach ($serviceName in @('authentication', 'user')) {
 
 $realm = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot 'keycloak/realms/vistay-host-realm.json') |
     ConvertFrom-Json
-Assert-Contract ($envValues.VISTAY_HOST_REALM_ENABLED -eq 'false' -and $realm.enabled -eq $false) `
-    'The checked-in Host realm must remain disabled until this edge/JWT/smoke gate is approved.'
+Assert-Contract ($envValues.VISTAY_HOST_REALM_ENABLED -eq 'false' -and $realm.enabled -eq $true) `
+    'The Host realm import must support registration while the baseline edge exposure remains disabled.'
 Assert-Contract ($envValues.HOST_GRAPHQL_HOST -eq 'host-api.localhost' -and
     $envValues.HOST_WEB_HOST -eq 'host.localhost') `
     'Host Web and GraphQL hosts must remain exact and deterministic in the local environment.'
@@ -193,11 +193,11 @@ $report = [ordered]@{
     audience = $envValues.HOST_JWT_AUDIENCES
     approvedFields = @('myProfile', 'updateMyProfile')
     baselineRealmEnabled = $realm.enabled
-    rollback = 'Disable Host ingress and set vistay-host.enabled=false; retain users and audit history; Backoffice routes remain unchanged.'
+    rollback = 'Disable Host ingress and registration; retain users and audit history; Backoffice routes remain unchanged.'
     acceptanceCriteria = [ordered]@{
         AC01 = 'Host Web and Host GraphQL have separate allow-listed routes with trusted issuer/audience configuration and correlation propagation.'
         AC02 = 'Host router accepts only vistay-host JWT settings and a profile-only supergraph; Backoffice/customer fallback and internal routes are absent.'
-        AC03 = 'The disabled realm baseline and documented ingress rollback preserve Backoffice topology and data.'
+        AC03 = 'The disabled edge baseline and documented ingress/registration rollback preserve Backoffice topology and data.'
     }
 }
 Write-Host ('Host edge topology report: ' + ($report | ConvertTo-Json -Compress))

@@ -351,7 +351,7 @@ services:
 
   router-customer:
     image: ${HIVE_ROUTER_IMAGE:-ghcr.io/graphql-hive/router:0.3.5@sha256:feaf52e70615f8516d86c4c07f6f29046d88e1b38f9cf6aa099d17b2b51f4827}
-    profiles: ["edge", "full"]
+    profiles: ["edge", "epic01", "full"]
     environment:
       ROUTER_CONFIG_FILE_PATH: /app/config/router.config.yaml
       CUSTOMER_JWKS_URL: ${CUSTOMER_JWKS_URL:-http://keycloak:8080/realms/vistay-customer/protocol/openid-connect/certs}

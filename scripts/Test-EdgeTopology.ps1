@@ -226,7 +226,7 @@ if ($IncludeEpic01 -or $IncludeFullStack) {
         @{ Name = 'GRPC_SERVER_CERT'; Value = 'file:/run/secrets/grpc/server.crt' },
         @{ Name = 'GRPC_SERVER_KEY'; Value = 'file:/run/secrets/grpc/server.key' },
         @{ Name = 'GRPC_CLIENT_CA_CERT'; Value = 'file:/run/secrets/grpc/ca.crt' },
-        @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/authentication,spiffe://vistay/service/booking,spiffe://vistay/service/finance,spiffe://vistay/service/payment,spiffe://vistay/service/notification' },
+        @{ Name = 'GRPC_ALLOWED_CALLER_URIS'; Value = 'spiffe://vistay/service/authentication,spiffe://vistay/service/booking,spiffe://vistay/service/property,spiffe://vistay/service/finance,spiffe://vistay/service/payment,spiffe://vistay/service/notification' },
         @{ Name = 'GRPC_MAXIMUM_DEADLINE'; Value = '2s' }
     )) {
         if ($user.environment.($expected.Name) -ne $expected.Value) {
@@ -362,8 +362,8 @@ foreach ($requiredSetting in @('enabled: true', 'require_authentication: true', 
 }
 
 if (-not $nginxTargets.Contains('^/realms/vistay-host/') -or
-    -not $nginxTargets.Contains('^/(realms/vistay-backoffice/|resources/)')) {
-    throw 'Nginx must allowlist only the Backoffice and Host realm/resource paths.'
+    -not $nginxTargets.Contains('^/(realms/vistay-(?:backoffice|customer)/|resources/)')) {
+    throw 'Nginx must allowlist only the Backoffice, Customer and Host realm/resource paths.'
 }
 if ($nginxTargets -match '(?m)^\s*location\s+/\s*\{\s*proxy_pass\s+http://keycloak:8080') {
     throw 'Nginx must not expose the entire Keycloak surface, including /admin.'
