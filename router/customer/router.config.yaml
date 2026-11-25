@@ -46,3 +46,11 @@ introspection: false
 subscriptions: { enabled: false }
 error_masking: { enabled: true }
 log: { level: info, format: json }
+
+telemetry:
+  metrics:
+    exporters:
+      - kind: prometheus
+        enabled: true
+        port: 9100
+        path: /metrics

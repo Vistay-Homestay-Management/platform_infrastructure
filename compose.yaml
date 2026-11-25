@@ -1,4 +1,4 @@
-name: vistay
+name: vistay-app
 
 x-postgres-image: &postgres-image postgres:18.6-alpine
 x-kafka-image: &kafka-image apache/kafka:4.3.1
@@ -224,8 +224,8 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
       - --web.enable-lifecycle
-    ports:
-      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    expose:
+      - "9090"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -271,6 +271,45 @@ services:
     command:
       - --nginx.scrape-uri=http://nginx:8081/nginx_status
     expose: ["9113"]
+    restart: unless-stopped
+    networks: [vistay]
+
+  blackbox-exporter:
+    image: ${BLACKBOX_EXPORTER_IMAGE:-prom/blackbox-exporter:v0.27.0}
+    profiles: ["observability", "full"]
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+    volumes:
+      - ./observability/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    expose: ["9115"]
+    restart: unless-stopped
+    networks: [vistay]
+
+  postgres-exporter:
+    image: ${POSTGRES_EXPORTER_IMAGE:-prometheuscommunity/postgres-exporter:v0.17.1}
+    profiles: ["observability", "full"]
+    environment:
+      DATA_SOURCE_URI: "postgres:5432/vistay?sslmode=disable"
+      DATA_SOURCE_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
+    expose: ["9187"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [vistay]
+
+  redis-exporter:
+    image: ${REDIS_EXPORTER_IMAGE:-oliver006/redis_exporter:v1.67.0}
+    profiles: ["observability", "full"]
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    expose: ["9121"]
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks: [vistay]
 
@@ -368,6 +407,7 @@ services:
       LOG_FORMAT: json
     expose:
       - "4000"
+      - "9100"
     volumes:
       - ./router/backoffice/router.config.yaml:/app/config/router.config.yaml:ro
       - ./router/backoffice/supergraph.graphql:/app/schema/supergraph.graphql:ro
@@ -397,6 +437,7 @@ services:
       LOG_FORMAT: json
     expose:
       - "4000"
+      - "9100"
     volumes:
       - ./router/host/router.config.yaml:/app/config/router.config.yaml:ro
       - ./router/host/supergraph.graphql:/app/schema/supergraph.graphql:ro
@@ -424,7 +465,7 @@ services:
       CUSTOMER_CORS_ALLOWED_ORIGINS: ${CUSTOMER_CORS_ALLOWED_ORIGINS:-http://customer.localhost}
       LOG_LEVEL: ${HIVE_ROUTER_LOG_LEVEL:-info}
       LOG_FORMAT: json
-    expose: ["4000"]
+    expose: ["4000", "9100"]
     volumes:
       - ./router/customer/router.config.yaml:/app/config/router.config.yaml:ro
       - ./router/customer/supergraph.graphql:/app/schema/supergraph.graphql:ro
@@ -495,4 +536,4 @@ volumes:
 
 networks:
   vistay:
-    name: vistay
+    name: vistay-app

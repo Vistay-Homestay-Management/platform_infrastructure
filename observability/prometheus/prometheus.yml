@@ -23,3 +23,84 @@ scrape_configs:
           - notification:8080
           - property:8080
           - booking:8080
+          - finance:8080
+          - payment:8080
+          - operations:8080
+          - ota:8080
+          - media:8080
+          - warehouse:8080
+
+  - job_name: keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["keycloak:9000"]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  - job_name: routers
+    metrics_path: /probe
+    static_configs:
+      - targets: ["http://router-backoffice:4000/health"]
+        labels:
+          module: http_2xx
+          router: backoffice
+      - targets: ["http://router-host:4000/health"]
+        labels:
+          module: http_2xx
+          router: host
+      - targets: ["http://router-customer:4000/health"]
+        labels:
+          module: http_2xx
+          router: customer
+    relabel_configs:
+      - source_labels: [module]
+        target_label: __param_module
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: router-metrics
+    static_configs:
+      - targets: ["router-backoffice:9100"]
+        labels:
+          router: backoffice
+      - targets: ["router-host:9100"]
+        labels:
+          router: host
+      - targets: ["router-customer:9100"]
+        labels:
+          router: customer
+
+  - job_name: frontends
+    metrics_path: /probe
+    static_configs:
+      - targets: ["http://nginx:8080/"]
+        labels:
+          module: frontend_admin
+          frontend: admin
+      - targets: ["http://nginx:8080/"]
+        labels:
+          module: frontend_host
+          frontend: host
+      - targets: ["http://nginx:8080/"]
+        labels:
+          module: frontend_customer
+          frontend: customer
+    relabel_configs:
+      - source_labels: [module]
+        target_label: __param_module
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

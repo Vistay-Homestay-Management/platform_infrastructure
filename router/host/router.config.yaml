@@ -108,3 +108,11 @@ error_masking:
 log:
   level: info
   format: json
+
+telemetry:
+  metrics:
+    exporters:
+      - kind: prometheus
+        enabled: true
+        port: 9100
+        path: /metrics
